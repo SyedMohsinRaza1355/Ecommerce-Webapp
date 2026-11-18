@@ -9,3 +9,5 @@ files and creds/
 *.tsbuildinfo
 next-env.d.ts
 .vercel
+
+.vercel
