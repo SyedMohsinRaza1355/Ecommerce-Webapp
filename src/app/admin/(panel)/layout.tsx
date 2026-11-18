@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
+import { Icon } from "@/components/Icons";
 import { requireSuperAdmin } from "@/lib/auth/current";
 import { logoutAction } from "../login/actions";
 
@@ -13,11 +14,11 @@ export default async function PanelLayout({ children }: { children: ReactNode })
       userLabel="Super Admin"
       logout={logoutAction}
       nav={[
-        { href: "/admin", label: "Dashboard" },
-        { href: "/admin/instances", label: "Stores" },
-        { href: "/admin/plans", label: "Plans" },
-        { href: "/admin/audit", label: "Audit log" },
-        { href: "/toggles", label: "Toggle catalogue" },
+        { href: "/admin", label: "Dashboard", icon: Icon.home, exact: true },
+        { href: "/admin/instances", label: "Stores", icon: Icon.store },
+        { href: "/admin/plans", label: "Plans", icon: Icon.tag },
+        { href: "/admin/audit", label: "Audit log", icon: Icon.list },
+        { href: "/toggles", label: "Toggle catalogue", icon: Icon.switch },
       ]}
     >
       {children}

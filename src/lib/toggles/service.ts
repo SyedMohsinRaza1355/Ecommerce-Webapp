@@ -1,6 +1,7 @@
 import { platformDb } from "@/lib/db/client";
 import type { InstanceRecord } from "@/lib/tenant/resolve";
 import { evaluateToggles } from "./evaluate";
+import { PACK_BY_ID } from "@/catalog/packs";
 import type { Effective } from "./types";
 
 const TTL_MS = 30_000; // SRS 7.2: servers cache settings for at most 30 seconds
@@ -28,6 +29,7 @@ export async function getEffectiveToggles(instance: InstanceRecord): Promise<Map
     overrides: instance.toggleOverrides,
     planIncludes: plan?.includedToggles ? new Set(plan.includedToggles) : undefined,
     planDefaults: plan?.defaults,
+    packDefaults: instance.industryPack ? PACK_BY_ID.get(instance.industryPack)?.toggles : undefined,
   });
   cache.set(`${instance._id}:${instance.configVersion ?? 0}`, { at: Date.now(), value });
   return value;

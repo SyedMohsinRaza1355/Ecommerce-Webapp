@@ -64,3 +64,19 @@ export async function resolveRequestTenant(): Promise<Resolution> {
   const h = await headers();
   return resolveHost(h.get("host"));
 }
+
+/**
+ * Preview resolution for environments without wildcard DNS (e.g. *.vercel.app).
+ * The subdomain comes from a route segment on the PLATFORM host and is validated
+ * against the registry; it grants no privileges and never reaches the data layer
+ * as a raw tenant id.
+ */
+export async function resolvePreview(subdomain: string): Promise<Resolution> {
+  const parsed = parseHost(`${subdomain}.${env().baseDomain}`, env().baseDomain);
+  if (parsed.kind !== "subdomain") return { type: "not_found" };
+  const instance = await lookup(parsed);
+  if (!instance) return { type: "not_found" };
+  if (instance.status === "suspended") return { type: "suspended", name: instance.name };
+  if (instance.status !== "active") return { type: "not_found" };
+  return { type: "ok", ctx: issueTenantContext(instance._id), instance };
+}
