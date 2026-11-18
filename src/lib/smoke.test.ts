@@ -2,9 +2,11 @@ import { describe, it, expect } from "vitest";
 import { GET } from "@/app/api/health/route";
 
 describe("health route", () => {
-  it("reports ok", async () => {
-    const res = GET();
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok", phase: 0 });
+  it("reports phase 1 and database state", async () => {
+    const res = await GET();
+    const body = await res.json();
+    expect(body.phase).toBe(1);
+    expect(["ok", "unavailable", "not_configured"]).toContain(body.database);
+    expect(res.status).toBe(body.database === "unavailable" ? 503 : 200);
   });
 });
