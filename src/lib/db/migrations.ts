@@ -13,6 +13,25 @@ export const TENANT_MIGRATIONS: Migration[] = [
       await db.collection("products").createIndex({ instanceId: 1, slug: 1 }, { unique: true, sparse: true });
     },
   },
+  {
+    version: 2,
+    name: "commerce collections and indexes",
+    async up(db) {
+      await db.collection("categories").createIndex({ instanceId: 1, slug: 1 }, { unique: true });
+      await db.collection("products").createIndex({ instanceId: 1, status: 1, createdAt: -1 });
+      await db.collection("products").createIndex({ instanceId: 1, categoryId: 1 });
+      await db.collection("orders").createIndex({ instanceId: 1, orderNo: 1 }, { unique: true });
+      await db.collection("orders").createIndex({ instanceId: 1, idempotencyKey: 1 }, { unique: true });
+      await db.collection("orders").createIndex({ trackingHash: 1 }, { unique: true });
+      await db.collection("orders").createIndex({ instanceId: 1, createdAt: -1 });
+      await db.collection("payment_events").createIndex({ instanceId: 1, eventId: 1 }, { unique: true });
+      await db.collection("carts").createIndex({ updatedAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 14 });
+      await db.collection("outbox").createIndex({ instanceId: 1, status: 1, nextAttemptAt: 1 });
+      await db.collection("emails").createIndex({ instanceId: 1, sentAt: -1 });
+      await db.collection("activity").createIndex({ instanceId: 1, at: -1 });
+      await db.collection("discounts").createIndex({ instanceId: 1, code: 1 }, { unique: true });
+    },
+  },
 ];
 
 export const PLATFORM_MIGRATIONS: Migration[] = [
@@ -25,6 +44,13 @@ export const PLATFORM_MIGRATIONS: Migration[] = [
       await db.collection("plans").createIndex({ slug: 1 }, { unique: true });
       await db.collection("audit_log").createIndex({ instanceId: 1, at: -1 });
       await db.collection("audit_log").createIndex({ actorId: 1, at: -1 });
+    },
+  },
+  {
+    version: 2,
+    name: "payment intent routing",
+    async up(db) {
+      await db.collection("payment_intents").createIndex({ instanceId: 1, orderId: 1 });
     },
   },
 ];

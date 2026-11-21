@@ -1,5 +1,5 @@
 import type { Collection, Document, Filter, OptionalUnlessRequiredId, WithId } from "mongodb";
-import { getClient } from "@/lib/db/client";
+import { tenantDb } from "./schema";
 import { assertTenantContext, type TenantContext } from "./context";
 
 type Owned = Document & { instanceId?: string };
@@ -13,18 +13,28 @@ type Owned = Document & { instanceId?: string };
 export class TenantRepo<T extends Owned> {
   constructor(private readonly name: string) {}
 
-  private async col(ctx: TenantContext): Promise<Collection<T>> {
-    assertTenantContext(ctx);
-    return (await getClient()).db(ctx.dbName).collection<T>(this.name);
+  /** Escape hatch for atomic operations; always combine with scope(). */
+  async collection(ctx: TenantContext): Promise<Collection<T>> {
+    return this.col(ctx);
   }
 
-  private scope(ctx: TenantContext, filter: Filter<T> = {}): Filter<T> {
+  private async col(ctx: TenantContext): Promise<Collection<T>> {
+    assertTenantContext(ctx);
+    return (await tenantDb(ctx)).collection<T>(this.name);
+  }
+
+  scope(ctx: TenantContext, filter: Filter<T> = {}): Filter<T> {
     return { ...filter, instanceId: ctx.instanceId } as Filter<T>;
   }
 
   async findById(ctx: TenantContext, id: T["_id"]): Promise<WithId<T> | null> {
     const c = await this.col(ctx);
     return c.findOne(this.scope(ctx, { _id: id } as Filter<T>)) as Promise<WithId<T> | null>;
+  }
+
+  async count(ctx: TenantContext, filter: Filter<T> = {}): Promise<number> {
+    const c = await this.col(ctx);
+    return c.countDocuments(this.scope(ctx, filter));
   }
 
   async find(ctx: TenantContext, filter: Filter<T> = {}, limit = 100): Promise<WithId<T>[]> {

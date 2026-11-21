@@ -62,7 +62,7 @@ describe.skipIf(!HAS_DB)("provisioning saga (Atlas, synthetic data)", () => {
     const client = await getClient();
     const tdb = client.db(dbNameFor(r.instanceId));
     expect(await tdb.collection("categories").countDocuments()).toBe(5);
-    expect((await tdb.collection("_meta").findOne({ _id: "schema" as never }))?.schemaVersion).toBe(1);
+    expect((await tdb.collection("_meta").findOne({ _id: "schema" as never }))?.schemaVersion).toBe(2);
     const inv = await db.collection<Invite>("invites").findOne({ _id: hashToken(r.inviteToken) });
     expect(inv?.email).toBe("owner@example.com");
     expect(inv?.usedAt).toBeNull();
