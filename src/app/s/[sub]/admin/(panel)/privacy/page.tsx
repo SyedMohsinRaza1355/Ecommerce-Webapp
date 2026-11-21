@@ -15,6 +15,14 @@ export default async function PrivacyPage({ params }: { params: Promise<{ sub: s
         <label className="field"><span>Customer email</span><input className="input" type="email" name="email" required dir="ltr" /></label>
         <label className="field"><span>Type DELETE to confirm</span><input className="input" name="confirm" autoComplete="off" /><p className="hint">This cannot be undone. The action is recorded in the audit log.</p></label>
       </AF>
+      <section className="card mt-6" aria-labelledby="exp">
+        <h2 id="exp" className="font-extrabold">Export a customer&apos;s data</h2>
+        <p className="mb-3 text-sm text-muted">Download everything this store holds about one customer, for an access request.</p>
+        <form method="get" action={`/s/${sub}/admin/privacy/export`} className="flex flex-wrap items-end gap-3">
+          <label className="field mb-0"><span>Customer email</span><input className="input" type="email" name="email" required dir="ltr" /></label>
+          <button className="btn btn-secondary">Download data</button>
+        </form>
+      </section>
     </div>
   );
 }

@@ -13,7 +13,7 @@ export type AcceptState = { error?: string } | undefined;
 
 export async function acceptInviteAction(token: string, _prev: AcceptState, form: FormData): Promise<AcceptState> {
   const ip = ((await headers()).get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
-  if (!rateLimit(`invite:${ip}`, 10, 60_000).ok) return { error: "Too many attempts. Wait a minute and try again." };
+  if (!(await rateLimit(`invite:${ip}`, 10, 60_000)).ok) return { error: "Too many attempts. Wait a minute and try again." };
 
   const password = String(form.get("password") ?? "");
   const weak = validatePasswordStrength(password);

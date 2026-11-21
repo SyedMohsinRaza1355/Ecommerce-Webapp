@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { parseHost, validateSubdomain, normalizeHost } from "@/lib/tenant/host";
 import { issueTenantContext, assertTenantContext, newInstanceId, dbNameFor } from "@/lib/tenant/context";
 import { authorize, PERMISSIONS, ROLES, type Actor, type Role } from "@/lib/auth/rbac";
-import { signSession, verifySession } from "@/lib/auth/session";
+import { signSession, verifySession, isSessionRevoked } from "@/lib/auth/session";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { redact } from "@/lib/audit/log";
 import { money, add, percentBps, parseMajor, formatMajor, multiply } from "@/lib/money/money";
@@ -112,6 +112,23 @@ describe("sessions and passwords", () => {
     expect(await verifyPassword("correct horse 42", h)).toBe(true);
     expect(await verifyPassword("wrong password 1", h)).toBe(false);
     await expect(hashPassword("short1")).rejects.toThrow();
+  });
+});
+
+describe("session revocation", () => {
+  it("revokes sessions issued before the valid-after moment, keeps later ones", () => {
+    const after = new Date("2026-01-01T10:00:00Z");
+    const t = Math.floor(after.getTime() / 1000);
+    expect(isSessionRevoked(t - 1, after)).toBe(true);
+    expect(isSessionRevoked(t, after)).toBe(false);
+    expect(isSessionRevoked(t + 60, after)).toBe(false);
+    expect(isSessionRevoked(undefined, after)).toBe(true);
+    expect(isSessionRevoked(t - 9999, undefined)).toBe(false);
+  });
+  it("tokens carry an issue time", async () => {
+    const t = await signSession({ userId: "u", role: "manager", instanceId: "aaaaaaaaaaaa" }, "x".repeat(40));
+    const a = await verifySession(t, "x".repeat(40));
+    expect(typeof a?.issuedAt).toBe("number");
   });
 });
 

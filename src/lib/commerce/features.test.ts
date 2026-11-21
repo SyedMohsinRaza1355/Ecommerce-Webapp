@@ -147,31 +147,31 @@ describe.skipIf(!HAS_DB)("owner features, undo, staff and 2FA (Atlas, synthetic 
       return id;
     };
     it("signs in with the right password only; unknown users and wrong passwords look identical", async () => {
-      resetRateLimits();
+      await resetRateLimits();
       await addUser("login@shop.test", "manager");
       expect(await authenticateStaff(ctx, "LOGIN@shop.test", "Correct-horse-42", undefined, "1.1.1.1")).toMatchObject({ ok: true });
       expect(await authenticateStaff(ctx, "login@shop.test", "wrong-password-1", undefined, "1.1.1.2")).toEqual({ ok: false, reason: "invalid" });
       expect(await authenticateStaff(ctx, "nobody@shop.test", "wrong-password-1", undefined, "1.1.1.3")).toEqual({ ok: false, reason: "invalid" });
     });
     it("rate limits repeated failures per account and address", async () => {
-      resetRateLimits();
+      await resetRateLimits();
       const rs = [];
       for (let i = 0; i < 7; i++) rs.push(await authenticateStaff(ctx, "login@shop.test", "bad-password-1", undefined, "9.9.9.9"));
       expect(rs.slice(0, 5).every((r) => !r.ok && r.reason === "invalid")).toBe(true);
       expect(rs[5]).toMatchObject({ ok: false, reason: "rate_limited" });
     });
     it("a staff member of store A cannot sign in to store B with the same credentials", async () => {
-      resetRateLimits();
+      await resetRateLimits();
       expect(await authenticateStaff(ctxOther, "login@shop.test", "Correct-horse-42", undefined, "2.2.2.2")).toEqual({ ok: false, reason: "invalid" });
     });
     it("disabled accounts cannot sign in", async () => {
-      resetRateLimits();
+      await resetRateLimits();
       const id = await addUser("off@shop.test", "cashier");
       expect(await changeStaff(ctx, owner(), id, { disabled: true })).toEqual({ ok: true });
       expect(await authenticateStaff(ctx, "off@shop.test", "Correct-horse-42", undefined, "3.3.3.3")).toEqual({ ok: false, reason: "disabled" });
     });
     it("two-step sign in: enrolment needs a valid code, then every login needs one, and codes cannot be replayed", async () => {
-      resetRateLimits();
+      await resetRateLimits();
       const id = await addUser("mfa@shop.test", "manager");
       const secret = await beginTotpEnrollment(ctx, id);
       expect(await confirmTotpEnrollment(ctx, id, "000000")).toBe(false);
@@ -216,7 +216,7 @@ describe.skipIf(!HAS_DB)("owner features, undo, staff and 2FA (Atlas, synthetic 
       expect(await setOwnPassword(ctx, id, "wrong", "Another-strong-77")).toMatchObject({ ok: false });
       expect(await setOwnPassword(ctx, id, "Correct-horse-42", "short")).toMatchObject({ ok: false });
       expect(await setOwnPassword(ctx, id, "Correct-horse-42", "Another-strong-77")).toEqual({ ok: true });
-      resetRateLimits();
+      await resetRateLimits();
       expect(await authenticateStaff(ctx, "pw@shop.test", "Another-strong-77", undefined, "5.5.5.5")).toMatchObject({ ok: true });
       expect(await authenticateStaff(ctx, "pw@shop.test", "Correct-horse-42", undefined, "5.5.5.6")).toMatchObject({ ok: false });
     });

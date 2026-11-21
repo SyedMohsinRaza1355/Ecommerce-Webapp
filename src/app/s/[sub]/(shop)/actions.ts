@@ -57,7 +57,7 @@ export async function placeOrderAction(sub: string, _prev: CheckoutState, form: 
   const ip = ((await headers()).get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
   const values: Record<string, string> = {};
   for (const k of ["name", "email", "phone", "address", "city", "notes", "method", "discountCode"]) values[k] = String(form.get(k) ?? "");
-  if (!rateLimit(`checkout:${s.instance._id}:${ip}`, 10, 60_000).ok) return { error: "Too many attempts. Please wait a minute and try again.", values };
+  if (!(await rateLimit(`checkout:${s.instance._id}:${ip}`, 10, 60_000)).ok) return { error: "Too many attempts. Please wait a minute and try again.", values };
 
   const jar = await cookies();
   const cartId = jar.get(cartCookie(s.instance._id))?.value;

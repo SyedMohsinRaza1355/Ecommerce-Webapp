@@ -19,7 +19,7 @@ function same(a: string, b: string) {
 export async function setupAction(_prev: SetupState, form: FormData): Promise<SetupState> {
   const h = await headers();
   const ip = (h.get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
-  if (!rateLimit(`setup:${ip}`, 5, 60_000).ok) return { error: "Too many attempts. Wait a minute and try again." };
+  if (!(await rateLimit(`setup:${ip}`, 5, 60_000)).ok) return { error: "Too many attempts. Wait a minute and try again." };
 
   const key = process.env.SETUP_KEY ?? "";
   if (!key) return { error: "Setup is not enabled on this server." };

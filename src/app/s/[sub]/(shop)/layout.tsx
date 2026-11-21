@@ -6,6 +6,7 @@ import { getCartItems } from "@/lib/commerce/cart";
 import { t } from "@/lib/i18n";
 import { Icon } from "@/components/Icons";
 import { CookieNotice } from "@/components/store/Bits";
+import { RegisterSW } from "@/components/store/RegisterSW";
 import { setLocaleAction } from "./actions";
 
 export default async function ShopLayout({ children, params }: { children: ReactNode; params: Promise<{ sub: string }> }) {
@@ -78,6 +79,7 @@ export default async function ShopLayout({ children, params }: { children: React
       </nav>
       <div className="h-16 md:hidden" aria-hidden="true" />
       <CookieNotice text={t(L, "cookieNotice")} ok={t(L, "ok")} />
+      {store.eff.get("F-137")?.enabled !== false && <RegisterSW sub={sub} />}
     </>
   );
 }

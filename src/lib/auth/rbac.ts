@@ -49,6 +49,8 @@ export type Actor = {
   instanceId: string | null;
   /** set while a super admin impersonates an owner */
   impersonating?: boolean;
+  /** token issue time in seconds, used for session revocation */
+  issuedAt?: number;
 };
 
 /** Actions an impersonated session may never perform (SRS 5.1). */

@@ -23,6 +23,8 @@ export type StaffUser = {
   totp?: { secret: string; enabled: boolean; lastStep: number };
   createdAt: Date;
   lastLoginAt?: Date;
+  /** sessions issued before this moment are no longer valid */
+  sessionsValidAfter?: Date;
 };
 
 export const users = new TenantRepo<StaffUser>("users");
@@ -36,7 +38,7 @@ export type AuthResult =
 
 export async function authenticateStaff(ctx: TenantContext, email: string, password: string, code: string | undefined, ip: string): Promise<AuthResult> {
   const e = email.trim().toLowerCase();
-  const rl = rateLimit(`staff:${ctx.instanceId}:${ip}:${e}`, 5, 60_000);
+  const rl = await rateLimit(`staff:${ctx.instanceId}:${ip}:${e}`, 5, 60_000);
   if (!rl.ok) return { ok: false, reason: "rate_limited", retryAfterSec: rl.retryAfterSec };
   const user = (await users.find(ctx, { email: e } as never, 1))[0];
   const good = await verifyPassword(password, user?.passwordHash ?? DUMMY);
@@ -102,7 +104,11 @@ export async function changeStaff(ctx: TenantContext, actor: Actor, userId: stri
     if (!INVITABLE_ROLES.includes(change.role as StaffRole)) return { ok: false, error: "Invalid role." };
     set.role = change.role as StaffRole;
   }
-  if (change.disabled !== undefined) set.disabled = change.disabled;
+  if (change.disabled !== undefined) {
+    set.disabled = change.disabled;
+    if (change.disabled) set.sessionsValidAfter = new Date(); // signs them out at once
+  }
+  if (change.role !== undefined) set.sessionsValidAfter = new Date(); // a role change needs a fresh sign in
   await users.updateById(ctx, userId, set as never);
   await appendAudit({ actorId: actor.userId, actorRole: actor.role, instanceId: ctx.instanceId, action: "staff.change", target: u.email, outcome: "success", before: { role: u.role, disabled: !!u.disabled }, after: set }).catch(() => undefined);
   return { ok: true };
@@ -112,7 +118,7 @@ export async function setOwnPassword(ctx: TenantContext, userId: string, current
   const u = await users.findById(ctx, userId);
   if (!u || !(await verifyPassword(current, u.passwordHash))) return { ok: false, error: "Your current password is not correct." };
   try {
-    await users.updateById(ctx, userId, { passwordHash: await hashPassword(next) } as never);
+    await users.updateById(ctx, userId, { passwordHash: await hashPassword(next), sessionsValidAfter: new Date() } as never);
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }

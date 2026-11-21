@@ -1,0 +1,28 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - name: Unit and integration tests
+        run: npm test
+        env:
+          # Database integration tests use a scratch Atlas cluster when this secret exists; otherwise they are skipped and reported as skipped.
+          MONGODB_URI: ${{ secrets.TEST_MONGODB_URI }}
+          SESSION_SECRET: ci-only-session-secret-0123456789abcdef
+      - run: npm run build
+        env:
+          SESSION_SECRET: ci-only-session-secret-0123456789abcdef
+      - run: npm audit --omit=dev --audit-level=high

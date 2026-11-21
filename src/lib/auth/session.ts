@@ -28,8 +28,15 @@ export async function verifySession(token: string | undefined, secret: string): 
     const role = payload.role as Role;
     if (!payload.sub || !ROLES.includes(role)) return null;
     const iid = typeof payload.iid === "string" ? payload.iid : null;
-    return { userId: payload.sub, role, instanceId: iid, impersonating: payload.imp === true };
+    return { userId: payload.sub, role, instanceId: iid, impersonating: payload.imp === true, issuedAt: typeof payload.iat === "number" ? payload.iat : undefined };
   } catch {
     return null;
   }
+}
+
+/** A session is revoked if it was issued before the user's "valid after" moment (password change, disable, sign-out everywhere). */
+export function isSessionRevoked(issuedAtSec: number | undefined, validAfter: Date | undefined | null): boolean {
+  if (!validAfter) return false;
+  if (issuedAtSec === undefined) return true;
+  return issuedAtSec < Math.floor(validAfter.getTime() / 1000);
 }

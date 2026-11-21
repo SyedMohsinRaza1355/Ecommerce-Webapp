@@ -270,8 +270,11 @@ export async function changePasswordAction(sub: string, _p: AdminState, form: Fo
   if (next !== fd(form, "confirm")) return { error: "The two new passwords do not match." };
   const r = await setOwnPassword(store.ctx, staff.user._id, fd(form, "current"), next);
   if (!r.ok) return { error: r.error };
+  // every other device is signed out; this one gets a fresh session
+  const fresh = await signSession({ userId: staff.user._id, role: staff.user.role, instanceId: store.ctx.instanceId }, env().sessionSecret);
+  (await cookies()).set(STORE_COOKIE, fresh, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 60 * 60 * 8 });
   await appendAudit({ actorId: staff.user._id, actorRole: staff.actor.role, instanceId: store.ctx.instanceId, action: "security.password_change", outcome: "success" }).catch(() => undefined);
-  return { message: "Password changed." };
+  return { message: "Password changed. Other devices have been signed out." };
 }
 
 export async function anonymizeAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {

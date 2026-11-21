@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const actor = await getActor();
   if (!authorize(actor, "instance.create").allow) return Response.json({ ok: false, reason: "Not allowed" }, { status: 403 });
-  if (!rateLimit(`sub:${actor!.userId}`, 60, 60_000).ok) return Response.json({ ok: false, reason: "Slow down a little" }, { status: 429 });
+  if (!(await rateLimit(`sub:${actor!.userId}`, 60, 60_000)).ok) return Response.json({ ok: false, reason: "Slow down a little" }, { status: 429 });
 
   const name = (new URL(req.url).searchParams.get("name") ?? "").trim().toLowerCase();
   const v = validateSubdomain(name);

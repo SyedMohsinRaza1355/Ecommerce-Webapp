@@ -18,7 +18,7 @@ export async function generateMetadata({ params }: { params: Promise<{ sub: stri
   const { sub, slug } = await params;
   const r = await find(sub, slug);
   if (!r) return { title: "Not found" };
-  return { title: r.p.name, description: r.p.description.slice(0, 150) || r.p.name, openGraph: { title: r.p.name, images: r.p.imageUrl ? [r.p.imageUrl] : [] } };
+  return { title: r.p.name, alternates: { canonical: `/s/${sub}/product/${slug}` }, description: r.p.description.slice(0, 150) || r.p.name, openGraph: { title: r.p.name, images: r.p.imageUrl ? [r.p.imageUrl] : [] } };
 }
 
 export default async function ProductPage({ params }: { params: Promise<{ sub: string; slug: string }> }) {

@@ -20,7 +20,7 @@ export async function loginAction(_prev: FormState, form: FormData): Promise<For
   const h = await headers();
   const ip = (h.get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
 
-  const rl = rateLimit(`login:${ip}:${email}`, 5, 60_000);
+  const rl = await rateLimit(`login:${ip}:${email}`, 5, 60_000);
   if (!rl.ok) return { error: `Too many attempts. Try again in ${rl.retryAfterSec} seconds.` };
   if (!email || !password) return { error: "Enter your email and password." };
 

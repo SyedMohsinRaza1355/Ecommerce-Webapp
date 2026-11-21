@@ -10,7 +10,7 @@ import type { Settings } from "./types";
 import type { Effective } from "@/lib/toggles/types";
 import { isLocale, type Locale } from "@/lib/i18n";
 import { env } from "@/lib/env";
-import { verifySession } from "@/lib/auth/session";
+import { verifySession, isSessionRevoked } from "@/lib/auth/session";
 import type { Actor } from "@/lib/auth/rbac";
 import { users, type StaffUser } from "./staff";
 
@@ -44,7 +44,7 @@ export async function getStaff(store: Extract<Store, { status: "ok" }>): Promise
     return a.role === "store_owner" ? { actor: a, user: null, impersonating: true, expiresAt: null } : null;
   }
   const user = await users.findById(store.ctx, a.userId);
-  if (!user || user.disabled || user.role !== a.role) return null;
+  if (!user || user.disabled || user.role !== a.role || isSessionRevoked(a.issuedAt, user.sessionsValidAfter)) return null;
   return { actor: { userId: user._id, role: user.role, instanceId: store.ctx.instanceId }, user, impersonating: false, expiresAt: null };
 }
 
