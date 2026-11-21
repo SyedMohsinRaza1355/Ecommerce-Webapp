@@ -12,3 +12,4 @@ next-env.d.ts
 
 .vercel
 public/axe.min.js
+tutorial/

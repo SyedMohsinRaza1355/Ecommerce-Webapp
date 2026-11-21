@@ -43,8 +43,9 @@ describe.skipIf(process.env.SEED_DEMO !== "1")("seed demo store", () => {
       await mk("Lunch Deal", "650", 20, "cat-5", "Any burger, fries and a drink.", { compareAt: "800" });
       await t.collection("discounts").insertOne({ instanceId: inst._id, code: "WEEKDAY10", percentBps: 1000, active: true, maxUses: null, used: 0, expiresAt: null, createdAt: new Date() });
       await setOwnerFeature(inst, { userId: "seed", role: "store_owner", instanceId: inst._id }, "F-065", true, true);
-      mkdirSync("files and creds", { recursive: true });
-      writeFileSync("files and creds/demo-credentials.txt", `Demo store owner (git-ignored file, local only)\nStore admin: /s/demo/admin/login\nEmail: owner@demo.test\nPassword: ${password}\nNote: two-step sign in is required, you will be asked to set it up at first sign in.\n`);
+      const credsFile = process.env.SEED_CREDS_FILE ?? "files and creds/demo-credentials.txt";
+      if (!process.env.SEED_CREDS_FILE) mkdirSync("files and creds", { recursive: true });
+      writeFileSync(credsFile, `Demo store owner (git-ignored file, local only)\nStore admin: /s/demo/admin/login\nEmail: owner@demo.test\nPassword: ${password}\nNote: two-step sign in is required, you will be asked to set it up at first sign in.\n`);
     }
     expect(inst).toBeTruthy();
     await closeClient();
