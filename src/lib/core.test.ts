@@ -158,3 +158,17 @@ describe("money", () => {
     expect(formatMajor(money(500, "JPY"))).toBe("500");
   });
 });
+
+import { fmtDate, fmtMoney } from "@/lib/i18n";
+
+describe("locale formatting", () => {
+  it("shows dates in the store timezone regardless of the server clock zone", () => {
+    expect(fmtDate("2026-11-21T21:30:00Z", "en", "Asia/Karachi")).toContain("22 Nov 2026");
+    expect(fmtDate("2026-11-21T21:30:00Z", "en", "UTC")).toContain("21 Nov 2026");
+  });
+  it("formats money from minor units per currency exponent", () => {
+    expect(fmtMoney(91050, "PKR", "en")).toMatch(/910\.50/);
+    expect(fmtMoney(500, "JPY", "en")).toMatch(/500/);
+    expect(fmtMoney(1234, "KWD", "en")).toMatch(/1\.234/);
+  });
+});

@@ -56,6 +56,9 @@ export function fmtMoney(minor: number, currency: string, locale: Locale): strin
   }
 }
 
-export function fmtDate(d: Date | string, locale: Locale): string {
-  return new Intl.DateTimeFormat(locale === "ur" ? "ur-PK" : "en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(d));
+/** Dates are shown in the store's timezone (default Asia/Karachi, set APP_TIMEZONE to change), not the server's. */
+export const APP_TIMEZONE = process.env.APP_TIMEZONE || "Asia/Karachi";
+
+export function fmtDate(d: Date | string, locale: Locale, timeZone: string = APP_TIMEZONE): string {
+  return new Intl.DateTimeFormat(locale === "ur" ? "ur-PK" : "en-GB", { dateStyle: "medium", timeStyle: "short", timeZone }).format(new Date(d));
 }

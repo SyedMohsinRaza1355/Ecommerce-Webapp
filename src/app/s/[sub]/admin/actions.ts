@@ -153,6 +153,8 @@ export async function discountAction(sub: string, _p: AdminState, form: FormData
   const code = fd(form, "code").trim().toUpperCase();
   if (op === "toggle") {
     await db.collection("discounts").updateOne({ instanceId: g.store.ctx.instanceId, code }, [{ $set: { active: { $not: "$active" } } }]);
+    await record(g.store, g.staff, "discount.toggle", code);
+    revalidatePath(`${home(sub)}/discounts`);
     return { message: "Updated." };
   }
   if (!/^[A-Z0-9_-]{3,30}$/.test(code)) return { error: "Codes use 3 to 30 letters, digits, - or _." };

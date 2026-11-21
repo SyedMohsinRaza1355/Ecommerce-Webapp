@@ -5,7 +5,7 @@
 - Last updated: 2026-11-22
 - Live: https://ecommerce-webapp-sable.vercel.app (demo store at /s/demo; credentials in the git-ignored file `files and creds/demo-credentials.txt`)
 - Completed: tenant foundation, toggle engine (145 toggles, 31 with working behaviour), Super Admin (stores, plans, locks/overrides, suspend, impersonation, export, kill switch, audit), provisioning saga, store admin (products, categories, orders, refunds, discounts, features with undo, settings with contrast guard, staff with roles, 2FA, activity, messages, privacy), storefront (search, cart, checkout, card via signed-webhook mock gateway, COD, tracking page), EN/UR with RTL, SEO, PWA, security headers
-- Tests last run: typecheck PASS, lint PASS, vitest 290+ PASS (database integration against Atlas), HTTP security + standards suite 119 PASS (against a running production build), axe-core WCAG 2.x A/AA scan PASS on storefront and admin pages after fixes, npm audit 0 vulnerabilities
+- Tests last run (2026-11-22): typecheck PASS, lint PASS, vitest 308 PASS (database integration against Atlas), HTTP security + standards suite 121 PASS (running production build: auth, cross-tenant, headers, PCI DOM scan, PWA, privacy export, link crawl, load), axe-core WCAG 2.x A/AA scan PASS, npm audit 0 vulnerabilities
 - Blocked decisions: DEC-01..09 are drafted defaults awaiting owner confirmation; real payment gateway, email/SMS providers, paid Atlas tier (backups, 1,000-tenant load test) need accounts
 - Accepted deviations: bcrypt instead of Argon2id; in-process caches instead of Redis; mock gateway; email recorded instead of sent; F-003/F-004 numbering follows v1
 - Known risks: no manual screen-reader audit; Atlas free tier (no backups)

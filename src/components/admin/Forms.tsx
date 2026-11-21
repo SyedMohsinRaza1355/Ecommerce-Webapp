@@ -29,6 +29,7 @@ export function Result({ state }: { state: AdminState }) {
 export function AF({ action, children, submit, secondary, className = "" }: { action: (p: AdminState, f: FormData) => Promise<AdminState>; children?: ReactNode; submit: string; secondary?: boolean; className?: string }) {
   const [state, setState] = useState<AdminState>();
   const [pending, start] = useTransition();
+  const router = useRouter();
   return (
     <form
       className={className}
@@ -41,6 +42,7 @@ export function AF({ action, children, submit, secondary, className = "" }: { ac
           const r = await action(undefined, fd);
           setState(r);
           if (r && !r.error && r.message) form.reset();
+          if (r && !r.error) router.refresh(); // lists on the page show the new data
         });
       }}
     >
