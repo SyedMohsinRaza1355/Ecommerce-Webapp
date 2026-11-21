@@ -33,12 +33,12 @@ export default async function StoresPage() {
             <tbody>
               {list.map((i) => (
                 <tr key={i._id}>
-                  <td className="font-semibold">{i.name}</td>
+                  <td className="font-semibold"><Link className="hover:underline" href={`/admin/instances/${i._id}`}>{i.name}</Link></td>
                   <td className="font-mono text-xs">{i.subdomain}.{env().baseDomain}</td>
                   <td>{i.planId}</td>
                   <td>{i.industryPack ?? "-"}</td>
                   <td><span className={`badge ${STATUS[i.status] ?? "badge-slate"}`}>{i.status.replace(/_/g, " ")}</span></td>
-                  <td className="text-end"><Link className="btn btn-secondary" href={`/s/${i.subdomain}`} target="_blank">Preview</Link></td>
+                  <td className="text-end"><Link className="btn btn-secondary" href={`/admin/instances/${i._id}`}>Manage</Link></td>
                 </tr>
               ))}
             </tbody>

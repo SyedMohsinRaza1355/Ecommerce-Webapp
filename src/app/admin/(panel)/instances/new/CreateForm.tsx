@@ -58,7 +58,7 @@ export default function CreateForm({ packs, plans, baseDomain }: { packs: Opt[];
         <div className="mt-5 flex flex-wrap gap-3">
           <Link className="btn btn-primary" href="/admin/instances">View all stores</Link>
           <Link className="btn btn-secondary" href={`/s/${state.subdomain}`} target="_blank">Preview the store</Link>
-          <a className="btn btn-secondary" href="/admin/instances/new">Create another</a>
+          <button type="button" className="btn btn-secondary" onClick={() => window.location.assign("/admin/instances/new")}>Create another</button>
         </div>
       </div>
     );
