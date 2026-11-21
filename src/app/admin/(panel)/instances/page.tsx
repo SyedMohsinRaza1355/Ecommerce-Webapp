@@ -29,7 +29,7 @@ export default async function StoresPage() {
       ) : (
         <div className="card reveal reveal-1 mt-6 overflow-x-auto p-0">
           <table className="table">
-            <thead><tr><th>Store</th><th>Address</th><th>Plan</th><th>Pack</th><th>Status</th><th /></tr></thead>
+            <thead><tr><th>Store</th><th>Address</th><th>Plan</th><th>Pack</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>
               {list.map((i) => (
                 <tr key={i._id}>

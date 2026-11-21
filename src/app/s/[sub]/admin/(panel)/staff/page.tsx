@@ -36,7 +36,7 @@ export default async function StaffPage({ params }: { params: Promise<{ sub: str
 
       <div className="card mt-5 overflow-x-auto p-0">
         <table className="table">
-          <thead><tr><th>Person</th><th>Role</th><th>Two-step</th><th>Last sign in</th><th /></tr></thead>
+          <thead><tr><th>Person</th><th>Role</th><th>Two-step</th><th>Last sign in</th><th><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>

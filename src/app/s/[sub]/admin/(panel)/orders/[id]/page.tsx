@@ -6,6 +6,7 @@ import { authorize } from "@/lib/auth/rbac";
 import { orders } from "@/lib/commerce/orders";
 import { nextOrderStates, roleMayMoveOrder } from "@/lib/commerce/states";
 import { fmtDate, fmtMoney } from "@/lib/i18n";
+import { formatMajor, money as toMoney } from "@/lib/money/money";
 import { ActionButton, AF } from "@/components/admin/Forms";
 import { orderStatusAction, refundAction } from "@/app/s/[sub]/admin/actions";
 
@@ -75,7 +76,7 @@ export default async function OrderDetail({ params }: { params: Promise<{ sub: s
             {remaining > 0 && (
               <AF action={refundAction.bind(null, sub, o._id)} submit="Issue refund" className="mt-3">
                 <input type="hidden" name="key" value={randomUUID()} />
-                <label className="field"><span>Amount</span><input className="input" name="amount" inputMode="decimal" placeholder={String(remaining / 100)} dir="ltr" required /></label>
+                <label className="field"><span>Amount</span><input className="input" name="amount" inputMode="decimal" placeholder={formatMajor(toMoney(remaining, o.currency))} dir="ltr" required /></label>
               </AF>
             )}
           </section>

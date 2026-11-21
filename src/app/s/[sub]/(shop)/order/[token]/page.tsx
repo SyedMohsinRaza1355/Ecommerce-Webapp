@@ -13,6 +13,8 @@ const STEP_TEXT: Record<string, string> = {
   pending: "Order received", confirmed: "Order confirmed", processing: "Being prepared", ready: "Ready", fulfilled: "On its way / handed over", completed: "Completed", cancelled: "Cancelled",
 };
 
+const PAY_TEXT: Record<string, string> = { captured: "Payment received", failed: "Payment failed", requires_payment: "Waiting for payment", partially_refunded: "Partly refunded", refunded: "Refunded", cod_due: "Pay on delivery" };
+
 export default async function OrderPage({ params }: { params: Promise<{ sub: string; token: string }> }) {
   const { sub, token } = await params;
   const s = await loadStore(sub);
@@ -22,14 +24,15 @@ export default async function OrderPage({ params }: { params: Promise<{ sub: str
   const L = s.locale;
   const money = (n: number) => fmtMoney(n, o.currency, L);
   const active = !["completed", "cancelled"].includes(o.state);
+  const waitingPay = ["failed", "requires_payment"].includes(o.payment.state) && o.state === "pending";
   const events = o.history.filter((h) => h.kind === "order" || h.kind === "payment");
 
   return (
     <div className="mx-auto max-w-3xl">
       <LiveRefresh active={active} />
       <div className="card pop-in text-center">
-        <span className="icon-chip mx-auto">{o.state === "cancelled" ? Icon.lock : Icon.check}</span>
-        <h1 className="mt-4 text-2xl font-extrabold">{o.state === "cancelled" ? "Order cancelled" : t(L, "orderPlaced")}</h1>
+        <span className="icon-chip mx-auto">{o.state === "cancelled" || waitingPay ? Icon.lock : Icon.check}</span>
+        <h1 className="mt-4 text-2xl font-extrabold">{o.state === "cancelled" ? "Order cancelled" : o.payment.state === "failed" ? "Payment not completed" : o.payment.state === "requires_payment" ? "Almost done: complete your payment" : t(L, "orderPlaced")}</h1>
         <p className="mt-1 text-muted">{t(L, "orderNumber")} <strong>#{o.orderNo}</strong></p>
         <p className="mt-3 flex flex-wrap justify-center gap-2" aria-live="polite">
           <span className="badge badge-indigo">{t(L, "status")}: {STEP_TEXT[o.state] ?? o.state}</span>
@@ -49,7 +52,7 @@ export default async function OrderPage({ params }: { params: Promise<{ sub: str
           <ol className="timeline mt-4">
             {events.map((h, i) => (
               <li key={i}>
-                <p className="font-semibold">{h.kind === "payment" ? `Payment: ${h.to}` : STEP_TEXT[h.to ?? ""] ?? h.to}</p>
+                <p className="font-semibold">{h.kind === "payment" ? PAY_TEXT[h.to ?? ""] ?? h.to : STEP_TEXT[h.to ?? ""] ?? h.to}</p>
                 <p className="text-xs text-muted">{fmtDate(h.at, L)}</p>
               </li>
             ))}

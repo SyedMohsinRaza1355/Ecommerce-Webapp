@@ -318,7 +318,7 @@ export async function refundOrder(ctx: TenantContext, orderId: string, amountMin
   const full = after.payment.refundedMinor >= after.totalMinor;
   await col.updateOne(
     { _id: orderId, instanceId: ctx.instanceId } as never,
-    { $set: { "payment.state": full ? "refunded" : "partially_refunded", updatedAt: now, ...(full ? { "flags.refundRequired": false } : {}) }, $push: { history: { at: now, kind: "payment", from: order.payment.state, to: full ? "refunded" : "partially_refunded", by: actor.userId, note: `refund ${amountMinor}` } } } as never,
+    { $set: { "payment.state": full ? "refunded" : "partially_refunded", updatedAt: now, ...(full ? { "flags.refundRequired": false } : {}) }, $push: { history: { at: now, kind: "payment", from: order.payment.state, to: full ? "refunded" : "partially_refunded", by: actor.userId, note: `refund of ${order.currency} ${formatMajor(money(amountMinor, order.currency))}` } } } as never,
   );
   if (notify.emails) {
     await enqueueEmail(ctx, "order.refunded", order.customer.email, { orderNo: order.orderNo, storeName: notify.storeName, amount: `${order.currency} ${formatMajor(money(amountMinor, order.currency))}` });

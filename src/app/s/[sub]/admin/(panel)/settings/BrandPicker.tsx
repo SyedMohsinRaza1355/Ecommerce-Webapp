@@ -13,7 +13,7 @@ export default function BrandPicker({ initial }: { initial: string }) {
       <span>Brand colour</span>
       <div className="flex flex-wrap items-center gap-3">
         <input type="color" aria-label="Pick a colour" value={valid ? c : "#4f46e5"} onChange={(e) => setC(e.target.value)} className="h-11 w-14 cursor-pointer rounded border border-line" />
-        <input className="input w-36 font-mono" name="primary" value={c} onChange={(e) => setC(e.target.value.trim())} maxLength={7} dir="ltr" aria-describedby="contrast" />
+        <input className="input w-36 font-mono" name="primary" aria-label="Brand colour code" value={c} onChange={(e) => setC(e.target.value.trim())} maxLength={7} dir="ltr" aria-describedby="contrast" />
         {valid && <span className="rounded-lg px-4 py-2 text-sm font-bold" style={{ background: c, color: r!.text }}>Button preview</span>}
       </div>
       <div id="contrast" aria-live="polite" className="mt-2 text-sm">

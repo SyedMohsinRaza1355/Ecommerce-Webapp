@@ -28,7 +28,7 @@ export default async function DiscountsPage({ params }: { params: Promise<{ sub:
       </AF>
       <div className="card mt-5 overflow-x-auto p-0">
         <table className="table">
-          <thead><tr><th>Code</th><th>Discount</th><th>Used</th><th>Expires</th><th>Status</th><th /></tr></thead>
+          <thead><tr><th>Code</th><th>Discount</th><th>Used</th><th>Expires</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>
             {rows.length === 0 && <tr><td colSpan={6} className="py-8 text-center text-muted">No codes yet.</td></tr>}
             {rows.map((d) => (

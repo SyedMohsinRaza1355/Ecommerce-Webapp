@@ -44,7 +44,7 @@ export default async function ShopLayout({ children, params }: { children: React
             {bilingual && (
               <form action={setLocaleAction.bind(null, sub)}>
                 <input type="hidden" name="locale" value={L === "en" ? "ur" : "en"} />
-                <button className="btn btn-secondary" lang={L === "en" ? "ur" : "en"} aria-label={t(L, "language")}>{L === "en" ? "اردو" : "English"}</button>
+                <button className="btn btn-secondary" lang={L === "en" ? "ur" : "en"} title={t(L, "language")}>{L === "en" ? "اردو" : "English"}</button>
               </form>
             )}
             <Link href={`${base}/cart`} className="btn btn-primary" aria-label={`${t(L, "cart")} (${count})`}>
@@ -68,6 +68,15 @@ export default async function ShopLayout({ children, params }: { children: React
           <p>{t(L, "poweredBy")}</p>
         </div>
       </footer>
+      <nav aria-label="Quick links" className="glass fixed inset-x-0 bottom-0 z-30 grid grid-cols-3 border-t border-line md:hidden">
+        <Link href={base} className="flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs font-semibold">{Icon.home}{t(L, "home")}</Link>
+        <Link href={`${base}/products`} className="flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs font-semibold">{Icon.list}{t(L, "shop")}</Link>
+        <Link href={`${base}/cart`} className="relative flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs font-semibold">
+          {Icon.cart}{t(L, "cart")}
+          {count > 0 && <span className="absolute end-1/4 top-1 rounded-full px-1.5 text-[10px] font-bold" style={{ background: "var(--brand-primary)", color: "var(--brand-on-primary)" }}>{count}</span>}
+        </Link>
+      </nav>
+      <div className="h-16 md:hidden" aria-hidden="true" />
       <CookieNotice text={t(L, "cookieNotice")} ok={t(L, "ok")} />
     </>
   );

@@ -53,7 +53,8 @@ export function prerequisiteChain(id: string, eff: ReadonlyMap<string, Effective
   const out: string[] = [];
   for (const group of def.requires) {
     if (group.some((p) => eff.get(p)?.enabled)) continue;
-    const pick = group.find((p) => eff.get(p)?.source !== "not_in_plan") ?? group[0];
+    const blocked = new Set(["not_in_plan", "instance_lock", "kill_switch", "instance_override"]);
+    const pick = group.find((p) => !blocked.has(eff.get(p)?.source ?? "")) ?? group[0];
     out.push(...prerequisiteChain(pick, eff, seen), pick);
   }
   return out;

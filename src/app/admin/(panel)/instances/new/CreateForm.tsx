@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createStoreAction, type CreateState } from "./actions";
 
@@ -9,7 +9,8 @@ type Opt = { id: string; name: string; description?: string };
 type Check = { state: "idle" | "checking" | "ok" | "bad"; reason?: string; suggestions?: string[] };
 
 export default function CreateForm({ packs, plans, baseDomain }: { packs: Opt[]; plans: Opt[]; baseDomain: string }) {
-  const [state, action, pending] = useActionState<CreateState, FormData>(createStoreAction, undefined);
+  const [state, setState] = useState<CreateState>();
+  const [pending, start] = useTransition();
   const [sub, setSub] = useState("");
   const [check, setCheck] = useState<Check>({ state: "idle" });
   const [copied, setCopied] = useState(false);
@@ -67,7 +68,7 @@ export default function CreateForm({ packs, plans, baseDomain }: { packs: Opt[];
   }
 
   return (
-    <form action={action} className="card" noValidate>
+    <form className="card" noValidate onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); start(async () => setState(await createStoreAction(undefined, fd))); }}>
       <label className="field">
         <span>Store name</span>
         <input className="input" name="name" required minLength={2} maxLength={60} placeholder="Crispy Fried Chicken" />

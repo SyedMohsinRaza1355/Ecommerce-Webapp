@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition, type ReactNode } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { AdminState } from "@/app/s/[sub]/admin/actions";
 
@@ -22,11 +22,28 @@ export function Result({ state }: { state: AdminState }) {
   );
 }
 
-/** A form wired to a server action, with consistent error/success output and a busy state. */
+/**
+ * A form wired to a server action. It submits manually so a failed submit keeps what the
+ * person typed (React would otherwise clear the form); a successful one resets it.
+ */
 export function AF({ action, children, submit, secondary, className = "" }: { action: (p: AdminState, f: FormData) => Promise<AdminState>; children?: ReactNode; submit: string; secondary?: boolean; className?: string }) {
-  const [state, act, pending] = useActionState<AdminState, FormData>(action, undefined);
+  const [state, setState] = useState<AdminState>();
+  const [pending, start] = useTransition();
   return (
-    <form action={act} className={className} noValidate>
+    <form
+      className={className}
+      noValidate
+      onSubmit={(e) => {
+        e.preventDefault();
+        const form = e.currentTarget;
+        const fd = new FormData(form);
+        start(async () => {
+          const r = await action(undefined, fd);
+          setState(r);
+          if (r && !r.error && r.message) form.reset();
+        });
+      }}
+    >
       {children}
       <button className={`btn ${secondary ? "btn-secondary" : "btn-primary"}`} disabled={pending}>{pending ? "Saving..." : submit}</button>
       <Result state={state} />

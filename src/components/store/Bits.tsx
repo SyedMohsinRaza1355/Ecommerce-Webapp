@@ -25,7 +25,7 @@ export function CookieNotice({ text, ok }: { text: string; ok: string }) {
   const dismissed = useSyncExternalStore(subscribe, dismissedNow, () => true);
   if (dismissed) return null;
   return (
-    <div role="region" aria-label="Cookie notice" className="pop-in fixed inset-x-3 bottom-3 z-40 mx-auto flex max-w-xl items-center gap-3 rounded-2xl bg-slate-900 p-3 text-sm text-white shadow-2xl">
+    <div role="region" aria-label="Cookie notice" className="pop-in fixed inset-x-3 bottom-20 z-40 md:bottom-3 mx-auto flex max-w-xl items-center gap-3 rounded-2xl bg-slate-900 p-3 text-sm text-white shadow-2xl">
       <p className="grow">{text}</p>
       <button className="btn btn-primary" onClick={() => { try { localStorage.setItem(KEY, "1"); } catch { /* storage blocked: notice returns next visit */ } listeners.forEach((l) => l()); }}>{ok}</button>
     </div>

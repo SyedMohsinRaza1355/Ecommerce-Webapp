@@ -14,13 +14,14 @@ export function ProductImage({ p, className = "" }: { p: Pick<Product, "name" | 
   );
 }
 
-export function ProductCard({ p, base, currency, locale, trackStock, delay = 0 }: { p: Product; base: string; currency: string; locale: Locale; trackStock: boolean; delay?: number }) {
+export function ProductCard({ p, base, currency, locale, trackStock, delay = 0, heading = "h3" }: { p: Product; base: string; currency: string; locale: Locale; trackStock: boolean; delay?: number; heading?: "h2" | "h3" }) {
+  const H = heading;
   const sold = trackStock && p.trackStock && p.stock <= 0;
   return (
     <li className="card hover-lift reveal flex flex-col p-3" style={{ animationDelay: `${Math.min(delay, 12) * 40}ms` }}>
       <Link href={`${base}/product/${p.slug}`} className="block">
         <ProductImage p={p} />
-        <h3 className="mt-3 line-clamp-2 font-bold leading-snug">{p.name}</h3>
+        <H className="mt-3 line-clamp-2 font-bold leading-snug">{p.name}</H>
       </Link>
       <div className="mt-auto pt-2">
         <p className="flex items-baseline gap-2">

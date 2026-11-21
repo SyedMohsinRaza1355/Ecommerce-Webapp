@@ -43,7 +43,7 @@ export default async function ProductsAdmin({ params, searchParams }: { params: 
       ) : (
         <div className="card reveal reveal-2 mt-5 overflow-x-auto p-0">
           <table className="table">
-            <thead><tr><th>Product</th><th>Price</th><th>Stock</th><th>Status</th><th /></tr></thead>
+            <thead><tr><th>Product</th><th>Price</th><th>Stock</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>
               {rows.map((p) => (
                 <tr key={p._id}>
