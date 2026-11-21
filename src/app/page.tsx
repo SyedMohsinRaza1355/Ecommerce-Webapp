@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
 import { Icon } from "@/components/Icons";
+import { platformDb } from "@/lib/db/client";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,12 @@ const PLANS = [
 const PACKS = ["Restaurant", "Fashion", "Grocery", "Electronics", "Bookings", "Digital goods", "Pharmacy", "Wholesale"];
 
 export default async function Home() {
+  let demoExists = false;
+  try {
+    demoExists = (await (await platformDb()).collection("instances").countDocuments({ subdomain: "demo", status: "active" })) > 0;
+  } catch {
+    demoExists = false; // the home page must never depend on the database
+  }
   return (
     <div>
       <header className="glass sticky top-0 z-20 border-b border-line">
@@ -30,6 +37,7 @@ export default async function Home() {
           <nav className="flex items-center gap-2" aria-label="Main">
             <Link href="#features" className="btn btn-secondary hidden sm:inline-flex">Features</Link>
             <Link href="#plans" className="btn btn-secondary hidden sm:inline-flex">Plans</Link>
+            <Link href="/signin" className="btn btn-secondary">Store owner sign in</Link>
             <Link href="/admin/login" className="btn btn-primary">Admin sign in</Link>
           </nav>
         </div>
@@ -50,6 +58,7 @@ export default async function Home() {
           <div className="reveal reveal-4 mt-9 flex flex-wrap justify-center gap-3">
             <Link href="#plans" className="btn btn-primary">See plans</Link>
             <Link href="/toggles" className="btn border-white/25 bg-white/10 text-white hover:bg-white/20">Explore the 145 features</Link>
+            {demoExists && <Link href="/s/demo" className="btn border-white/25 bg-white/10 text-white hover:bg-white/20">Visit the demo store</Link>}
           </div>
           <div className="reveal reveal-5 mt-12 flex flex-wrap justify-center gap-2">
             {PACKS.map((p) => (
@@ -96,6 +105,7 @@ export default async function Home() {
 
       <footer className="border-t border-line bg-white py-8 text-center text-sm text-muted">
         <Logo /> <span className="ms-2">Platform preview</span>
+        <p className="mt-3"><Link className="underline" href="/signin">Store owner sign in</Link> · <Link className="underline" href="/admin/login">Platform admin</Link> · <Link className="underline" href="/privacy">Privacy</Link> · <Link className="underline" href="/terms">Terms</Link></p>
       </footer>
     </div>
   );
