@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
 
+export const dynamic = "force-dynamic"; // nonce-based CSP needs per-request rendering
 export const metadata = { title: "Privacy notice | Storeforge", description: "How personal data is handled on Storeforge stores." };
 
 const SECTIONS: [string, string][] = [

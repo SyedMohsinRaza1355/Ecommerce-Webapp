@@ -16,7 +16,7 @@ Status: **Met** (implemented and tested), **Partial** (implemented with a stated
 | Session management: signed tokens, httpOnly/secure/sameSite cookies, revocation on password change / disable / role change, 30-min impersonation | Met | `lib/auth/session.ts`, `lib/commerce/load.ts` |
 | Brute-force resistance without user enumeration (dummy hash, identical errors) | Met | `authenticateStaff` tests |
 | Security headers: CSP, HSTS, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy, COOP | Met | `next.config.ts`; header tests |
-| CSP without `unsafe-inline` for scripts (nonce) | Open | scripts still allow inline for Next hydration; see "Next steps" |
+| CSP with per-request nonce and strict-dynamic (no inline script execution) | Met | `src/proxy.ts`, `lib/csp.ts`; verified in a browser: hydration and server actions work, no violations |
 | Input validation (zod, server-side), HTTPS-only image links, regex escaping in search | Met | `lib/commerce/store.ts`; hostile-input tests (no 5xx) |
 | Webhook authenticity: HMAC-SHA256, timing-safe compare, 5-minute replay window, dedupe by event id, amount check | Met | `lib/commerce/gateway.ts`, `orders.ts`; webhook tests |
 | Append-only audit trail with secret redaction | Partial | app exposes insert only (`lib/audit/log.ts`); database-level append-only role needs a paid Atlas custom role |

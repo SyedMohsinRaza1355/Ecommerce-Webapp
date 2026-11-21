@@ -8,5 +8,5 @@
 - Tests last run: typecheck PASS, lint PASS, vitest 290+ PASS (database integration against Atlas), HTTP security + standards suite 119 PASS (against a running production build), axe-core WCAG 2.x A/AA scan PASS on storefront and admin pages after fixes, npm audit 0 vulnerabilities
 - Blocked decisions: DEC-01..09 are drafted defaults awaiting owner confirmation; real payment gateway, email/SMS providers, paid Atlas tier (backups, 1,000-tenant load test) need accounts
 - Accepted deviations: bcrypt instead of Argon2id; in-process caches instead of Redis; mock gateway; email recorded instead of sent; F-003/F-004 numbering follows v1
-- Known risks: CSP still allows inline scripts; no manual screen-reader audit; Atlas free tier (no backups)
+- Known risks: no manual screen-reader audit; Atlas free tier (no backups)
 - Next smallest task: owner review of the demo store, then real gateway + email provider adapters

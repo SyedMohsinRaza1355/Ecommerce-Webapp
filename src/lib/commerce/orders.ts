@@ -19,6 +19,14 @@ export function trackingTokenFor(instanceId: string, orderId: string): string {
   return createHmac("sha256", env().sessionSecret || "dev").update(`track:${instanceId}:${orderId}`).digest("base64url");
 }
 
+/** Absolute link to the customer's order page, e.g. https://shop.example/s/demo/order/<token>. */
+export async function trackUrlFor(ctx: TenantContext, token: string): Promise<string> {
+  const inst = await (await platformDb()).collection<{ _id: string; subdomain: string }>("instances").findOne({ _id: ctx.instanceId }, { projection: { subdomain: 1 } });
+  const base = env().baseDomain;
+  const origin = /^(localhost|127\.)/.test(base) ? `http://${base}` : `https://${base}`;
+  return `${origin}/s/${inst?.subdomain ?? ""}/order/${token}`;
+}
+
 export type Features = { shipping: boolean; freeShipping: boolean; tax: boolean; discounts: boolean; cod: boolean; card: boolean; emails: boolean; stockTracking: boolean };
 
 export type PlaceInput = {
@@ -180,7 +188,7 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
     await (await platformDb()).collection("payment_intents").insertOne({ _id: intentRef as never, instanceId: ctx.instanceId, orderId: id, amountMinor: totals.totalMinor, currency: settings.currency, createdAt: now });
     await orders.updateById(ctx, id, { "payment.intentRef": intentRef } as never);
   } else if (feat.emails) {
-    await enqueueEmail(ctx, "order.placed", order.customer.email, { orderNo, storeName, total: `${settings.currency} ${formatMajor(money(totals.totalMinor, settings.currency))}`, trackUrl: `/track/${trackingToken}` });
+    await enqueueEmail(ctx, "order.placed", order.customer.email, { orderNo, storeName, total: `${settings.currency} ${formatMajor(money(totals.totalMinor, settings.currency))}`, trackUrl: await trackUrlFor(ctx, trackingToken) });
     await processOutbox(ctx).catch(() => undefined);
   }
   return { ok: true, orderId: id, orderNo, trackingToken, needsPayment: !cod };
@@ -233,7 +241,7 @@ export async function handleGatewayWebhook(rawBody: string, signature: string | 
     );
     if (r) {
       const store = storeNameOf ? await storeNameOf(ctx.instanceId) : "Our store";
-      await enqueueEmail(ctx, "order.paid", order.customer.email, { orderNo: order.orderNo, storeName: store, trackUrl: `/track/${trackingTokenFor(ctx.instanceId, order._id)}` });
+      await enqueueEmail(ctx, "order.paid", order.customer.email, { orderNo: order.orderNo, storeName: store, trackUrl: await trackUrlFor(ctx, trackingTokenFor(ctx.instanceId, order._id)) });
       await processOutbox(ctx).catch(() => undefined);
     }
     return { status: 200, body: { ok: true } };
@@ -292,7 +300,7 @@ export async function transitionOrder(ctx: TenantContext, orderId: string, to: O
     if (flipped) await releaseStock(ctx, order.items.map((i) => ({ productId: i.productId, qty: i.qty })));
     if (notify.emails) await enqueueEmail(ctx, "order.cancelled", order.customer.email, { orderNo: order.orderNo, storeName: notify.storeName });
   } else if (notify.emails && to !== "confirmed") {
-    await enqueueEmail(ctx, "order.status", order.customer.email, { orderNo: order.orderNo, storeName: notify.storeName, status: to, trackUrl: `/track/${trackingTokenFor(ctx.instanceId, orderId)}` });
+    await enqueueEmail(ctx, "order.status", order.customer.email, { orderNo: order.orderNo, storeName: notify.storeName, status: to, trackUrl: await trackUrlFor(ctx, trackingTokenFor(ctx.instanceId, orderId)) });
   }
   await processOutbox(ctx).catch(() => undefined);
   return { ok: true };

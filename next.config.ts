@@ -1,19 +1,7 @@
 import type { NextConfig } from "next";
 
-// Security headers for every response (OWASP ASVS L2, SRS NFR-09).
-const csp = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'" + (process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'"),
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https:",
-  "font-src 'self' data:",
-  "connect-src 'self'",
-  "manifest-src 'self'",
-  "form-action 'self'",
-  "base-uri 'self'",
-  "object-src 'none'",
-  "frame-ancestors 'none'",
-].join("; ");
+// Security headers for every response (OWASP ASVS L2, SRS NFR-09). The Content-Security-Policy with a
+// per-request nonce is set in src/proxy.ts.
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
@@ -22,7 +10,6 @@ const nextConfig: NextConfig = {
       {
         source: "/:path*",
         headers: [
-          { key: "Content-Security-Policy", value: csp },
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },

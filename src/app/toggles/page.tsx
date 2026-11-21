@@ -5,6 +5,7 @@ import { Logo } from "@/components/Logo";
 import { TOGGLES } from "@/lib/toggles/catalog";
 import { IMPLEMENTED } from "@/lib/toggles/handlers";
 
+export const dynamic = "force-dynamic"; // nonce-based CSP needs per-request rendering
 export const metadata: Metadata = { title: "Feature toggle explorer | Storeforge" };
 
 export default function TogglesPage() {

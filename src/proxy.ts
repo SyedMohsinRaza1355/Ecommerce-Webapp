@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
 import { parseHost } from "@/lib/tenant/host";
 import { resolveHost } from "@/lib/tenant/resolve";
+import { buildCsp, newNonce } from "@/lib/csp";
 
 /**
  * Host-based tenant routing (SRS 8.1). The Host header is the only input: a store on
@@ -15,6 +16,14 @@ export async function proxy(req: NextRequest) {
   headers.delete("x-tenant-id");
   headers.delete("x-instance-id");
   headers.set("x-pathname", path);
+  const nonce = newNonce();
+  const csp = buildCsp(nonce);
+  headers.set("x-nonce", nonce);
+  headers.set("content-security-policy", csp); // Next reads the nonce from this request header
+  const withCsp = <T extends Response>(res: T): T => {
+    res.headers.set("Content-Security-Policy", csp);
+    return res;
+  };
 
   const storeFiles = ["/robots.txt", "/sitemap.xml", "/manifest.webmanifest"];
   const passthrough = path.startsWith("/api/") || path.startsWith("/_next/") || (!storeFiles.includes(path) && /\.[a-z0-9]{2,5}$/i.test(path));
@@ -27,12 +36,12 @@ export async function proxy(req: NextRequest) {
       const r = await resolveHost(parsed.host);
       sub = r.type === "ok" ? r.instance.subdomain : null;
     }
-    if (!sub || path.startsWith("/s/")) return new NextResponse("Store not found", { status: 404, headers: { "content-type": "text/plain" } });
+    if (!sub || path.startsWith("/s/")) return withCsp(new NextResponse("Store not found", { status: 404, headers: { "content-type": "text/plain" } }));
     url.pathname = `/s/${sub}${path === "/" ? "" : path === "/sitemap.xml" ? "/sitemap" : path}`;
-    return NextResponse.rewrite(url, { request: { headers } });
+    return withCsp(NextResponse.rewrite(url, { request: { headers } }));
   }
-  if (parsed.kind === "invalid") return new NextResponse("Not found", { status: 404, headers: { "content-type": "text/plain" } });
-  return NextResponse.next({ request: { headers } });
+  if (parsed.kind === "invalid") return withCsp(new NextResponse("Not found", { status: 404, headers: { "content-type": "text/plain" } }));
+  return withCsp(NextResponse.next({ request: { headers } }));
 }
 
 export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"] };

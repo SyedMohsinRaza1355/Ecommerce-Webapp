@@ -125,6 +125,41 @@ describe.skipIf(!ENABLED)("standards: PCI scope, PWA, privacy rights, performanc
     });
   });
 
+  describe("link integrity: no broken internal links", () => {
+    async function crawl(start: string[], cookie?: string, max = 60) {
+      const seen = new Set<string>();
+      const queue = [...start];
+      const broken: string[] = [];
+      while (queue.length && seen.size < max) {
+        const path = queue.shift()!;
+        if (seen.has(path)) continue;
+        seen.add(path);
+        const r = await call(path, { cookie });
+        if (r.status >= 400) {
+          broken.push(`${path} -> ${r.status}`);
+          continue;
+        }
+        if (!/text\/html/.test(String(r.headers["content-type"]))) continue;
+        for (const m of r.body.matchAll(/href="(\/[^"#]*)"/g)) {
+          const href = m[1].replace(/&amp;/g, "&");
+          if (href.startsWith("//") || href.startsWith("/_next") || /\.(css|js|svg|png|ico)$/.test(href)) continue;
+          if (!seen.has(href)) queue.push(href);
+        }
+      }
+      return { seen: seen.size, broken };
+    }
+    it("every link reachable from the storefront works", async () => {
+      const r = await crawl([`/s/${SUB}`]);
+      expect(r.broken).toEqual([]);
+      expect(r.seen).toBeGreaterThan(8);
+    });
+    it("every link reachable from the store admin works", async () => {
+      const r = await crawl([`/s/${SUB}/admin`], ownerCookie, 80);
+      expect(r.broken).toEqual([]);
+      expect(r.seen).toBeGreaterThan(10);
+    });
+  });
+
   describe("performance and load (local, against the real database)", () => {
     const percentile = (xs: number[], p: number) => xs.slice().sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor((p / 100) * xs.length))];
     it("200 storefront requests at concurrency 20: no errors and sensible latency", async () => {

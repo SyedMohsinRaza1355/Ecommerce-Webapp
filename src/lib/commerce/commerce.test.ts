@@ -446,6 +446,15 @@ describe.skipIf(!HAS_DB)("commerce engine (Atlas, synthetic tenants)", () => {
       expect(m?.status).toBe("dead");
       expect(await db.collection("emails").countDocuments({ to: "a@b.com" })).toBe(0);
     });
+    it("order emails link to the real order page of the right store", async () => {
+      const r = await place(A, [{ productId: P.fries, qty: 1 }]);
+      if (!r.ok) throw new Error("x");
+      const db = await tenantDb(A);
+      const mail = await db.collection("emails").find({ to: "ayesha@example.com", type: "order.placed" }).sort({ sentAt: -1 }).limit(1).toArray();
+      expect(mail[0].body).toContain(`/s/shop-a/order/${r.trackingToken}`);
+      expect(mail[0].body).toMatch(/https?:\/\//);
+      expect(mail[0].body).not.toContain("/track/");
+    });
     it("a recovered provider delivers exactly once even with concurrent workers", async () => {
       const db = await tenantDb(A);
       await enqueueEmail(A, "order.cancelled", "c@d.com", { orderNo: 2, storeName: "S" });
