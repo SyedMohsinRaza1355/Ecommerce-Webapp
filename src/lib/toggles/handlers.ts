@@ -7,10 +7,9 @@ import { TOGGLES } from "./catalog";
  */
 export const REGISTERED_HANDLERS: ReadonlySet<string> = new Set(TOGGLES.map((d) => d.handler));
 
-// Phase 1 delivers the engine plus identity/RBAC/audit primitives only.
+// Toggles with working behaviour in code. Everything else is registered but shown as "coming soon".
 export const IMPLEMENTED: ReadonlySet<string> = new Set<string>([
-  "F-087", // default subdomain (tenant resolution)
-  "F-052", // staff accounts (identity primitives)
-  "F-107", // staff roles and permissions (RBAC)
-  "F-108", // staff activity log (audit)
+  "F-001", "F-005", "F-019", "F-026", "F-027", "F-029", "F-030", "F-037", "F-038", "F-041", "F-042",
+  "F-052", "F-053", "F-063", "F-065", "F-069", "F-073", "F-074", "F-075", "F-085", "F-086", "F-087",
+  "F-092", "F-107", "F-108", "F-109", "F-113", "F-126", "F-137", "F-139", "F-140",
 ]);

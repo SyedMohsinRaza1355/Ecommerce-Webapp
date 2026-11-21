@@ -130,3 +130,19 @@ body {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
 }
+
+/* ---------- store theming (brand colour comes from the store's own settings) ---------- */
+.store-theme .btn-primary { background: var(--brand-primary); color: var(--brand-on-primary); box-shadow: 0 6px 16px -8px var(--brand-primary); }
+.store-theme .btn-primary:hover { background: var(--brand-primary-hover); }
+.store-theme .icon-chip { background: var(--brand-primary); color: var(--brand-on-primary); }
+.store-theme a.link { color: var(--brand-primary); text-decoration: underline; }
+.skip-link { position: absolute; inset-inline-start: .5rem; top: -4rem; z-index: 100; background: #fff; color: #000; padding: .6rem 1rem; border-radius: .5rem; font-weight: 700; }
+.skip-link:focus { top: .5rem; }
+.product-img { aspect-ratio: 4 / 3; width: 100%; object-fit: cover; border-radius: .75rem; background: linear-gradient(135deg, #e8ebf6, #f6f0fb); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.timeline { position: relative; padding-inline-start: 1.5rem; }
+.timeline::before { content: ""; position: absolute; inset-inline-start: .45rem; top: .3rem; bottom: .3rem; width: 2px; background: var(--border-base); }
+.timeline li { position: relative; margin-bottom: 1rem; }
+.timeline li::before { content: ""; position: absolute; inset-inline-start: -1.3rem; top: .3rem; width: .7rem; height: .7rem; border-radius: 50%; background: var(--brand-primary); box-shadow: 0 0 0 4px #fff; }
+[dir="rtl"] body, [dir="rtl"] { font-family: "Noto Nastaliq Urdu", "Noto Naskh Arabic", "Segoe UI", ui-sans-serif, system-ui, sans-serif; }
+[dir="rtl"] .urdu-line { line-height: 1.9; }

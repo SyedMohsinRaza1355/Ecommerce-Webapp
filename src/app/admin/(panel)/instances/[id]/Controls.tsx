@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { inviteAction, planAction, statusAction, type ActionState } from "./actions";
+import { impersonateAction, type SupportState } from "./support";
 
 function Notice({ state }: { state: ActionState }) {
   if (!state) return null;
@@ -79,6 +80,21 @@ export function InviteControl({ id }: { id: string }) {
           </button>
         </div>
       )}
+    </form>
+  );
+}
+
+export function ImpersonateControl({ id }: { id: string }) {
+  const [state, action, pending] = useActionState<SupportState, FormData>(impersonateAction.bind(null, id), undefined);
+  return (
+    <form action={action}>
+      <label className="field mb-2">
+        <span>Support ticket or reason</span>
+        <input className="input" name="reason" required minLength={8} maxLength={300} placeholder="Ticket 1234: owner cannot see orders" />
+      </label>
+      <button className="btn btn-secondary" disabled={pending}>{pending ? "Starting..." : "Sign in as owner"}</button>
+      <p className="hint">Lasts 30 minutes, shows a red banner, cannot change the owner&apos;s password, email or two-step settings. The owner is emailed and every page is logged.</p>
+      {state?.error && <p role="alert" className="err pop-in mt-2">{state.error}</p>}
     </form>
   );
 }

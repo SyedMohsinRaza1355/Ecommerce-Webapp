@@ -1,7 +1,4 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { resolveRequestTenant } from "@/lib/tenant/resolve";
-import { getEffectiveToggles } from "@/lib/toggles/service";
 import { Logo } from "@/components/Logo";
 import { Icon } from "@/components/Icons";
 
@@ -25,32 +22,6 @@ const PLANS = [
 const PACKS = ["Restaurant", "Fashion", "Grocery", "Electronics", "Bookings", "Digital goods", "Pharmacy", "Wholesale"];
 
 export default async function Home() {
-  const r = await resolveRequestTenant();
-
-  if (r.type === "not_found") notFound();
-
-  if (r.type === "suspended") {
-    return (
-      <main className="mx-auto flex min-h-screen max-w-xl flex-col items-center justify-center p-8 text-center">
-        <div className="icon-chip pop-in">{Icon.lock}</div>
-        <h1 className="mt-5 text-2xl font-bold">{r.name} is temporarily unavailable</h1>
-        <p className="mt-3 text-muted">This store has been suspended. If you own it, please contact billing support.</p>
-      </main>
-    );
-  }
-
-  if (r.type === "ok") {
-    const eff = await getEffectiveToggles(r.instance);
-    const on = [...eff.values()].filter((e) => e.enabled).length;
-    return (
-      <main className="mx-auto max-w-2xl p-8">
-        <h1 className="text-3xl font-bold">{r.instance.name}</h1>
-        <p className="mt-3 text-muted">Storefront coming in an upcoming step.</p>
-        <p className="mt-2 text-sm">{on} of {eff.size} features enabled.</p>
-      </main>
-    );
-  }
-
   return (
     <div>
       <header className="glass sticky top-0 z-20 border-b border-line">

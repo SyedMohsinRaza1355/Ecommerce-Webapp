@@ -7,7 +7,7 @@ import { PACK_BY_ID } from "@/catalog/packs";
 import { TOGGLES } from "@/lib/toggles/catalog";
 import { getEffectiveToggles } from "@/lib/toggles/service";
 import type { InstanceRecord } from "@/lib/tenant/resolve";
-import { PlanControl, StatusControl, InviteControl } from "./Controls";
+import { PlanControl, StatusControl, InviteControl, ImpersonateControl } from "./Controls";
 import RuleSelect from "./RuleSelect";
 
 export const metadata = { title: "Store | Storeforge Super Admin" };
@@ -68,6 +68,18 @@ export default async function StoreDetail({ params, searchParams }: { params: Pr
       <div className="card reveal reveal-4 mt-5">
         <h2 className="font-bold">Owner access</h2>
         <div className="mt-3 max-w-md"><InviteControl id={id} /></div>
+      </div>
+
+      <div className="mt-5 grid gap-5 md:grid-cols-2">
+        <div className="card reveal reveal-5">
+          <h2 className="font-bold">Support access</h2>
+          <div className="mt-3"><ImpersonateControl id={id} /></div>
+        </div>
+        <div className="card reveal reveal-5">
+          <h2 className="font-bold">Export store data</h2>
+          <p className="mb-3 mt-1 text-sm text-muted">Download a JSON copy of this store&apos;s products, orders, settings and staff (without passwords). The export is logged.</p>
+          <a className="btn btn-secondary" href={`/admin/instances/${id}/export`} download>Download export</a>
+        </div>
       </div>
 
       <section className="mt-8" aria-labelledby="rules">

@@ -58,7 +58,7 @@ describe("RBAC matrix (SRS section 4)", () => {
     expect(allowedFor("cashier")).toEqual(["orders.own", "orders.process", "orders.updateStatus", "profile.own"]);
     expect(allowedFor("kitchen_ops")).toEqual(["inventory.view", "orders.own", "orders.updateStatus", "profile.own"]);
     expect(allowedFor("manager")).toEqual([
-      "branding.edit", "catalog.manage", "inventory.view", "orders.own", "orders.process",
+      "activity.view", "branding.edit", "catalog.manage", "inventory.view", "orders.own", "orders.process",
       "orders.updateStatus", "profile.own", "promotions.manage", "reports.view",
     ]);
     const owner = allowedFor("store_owner");

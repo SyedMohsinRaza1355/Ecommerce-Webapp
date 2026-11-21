@@ -1,0 +1,95 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { randomUUID } from "node:crypto";
+import { guard } from "@/lib/commerce/guard";
+import { authorize } from "@/lib/auth/rbac";
+import { orders } from "@/lib/commerce/orders";
+import { nextOrderStates, roleMayMoveOrder } from "@/lib/commerce/states";
+import { fmtDate, fmtMoney } from "@/lib/i18n";
+import { ActionButton, AF } from "@/components/admin/Forms";
+import { orderStatusAction, refundAction } from "@/app/s/[sub]/admin/actions";
+
+export const metadata = { title: "Order" };
+
+export default async function OrderDetail({ params }: { params: Promise<{ sub: string; id: string }> }) {
+  const { sub, id } = await params;
+  const { store, staff } = await guard(sub, "orders.updateStatus");
+  const o = await orders.findById(store.ctx, id);
+  if (!o) notFound();
+  const money = (n: number) => fmtMoney(n, o.currency, "en");
+  const canRefund = authorize(staff.actor, "orders.process", store.ctx).allow && ["captured", "partially_refunded"].includes(o.payment.state);
+  const nexts = nextOrderStates(o.state).filter((s) => roleMayMoveOrder(staff.actor.role, s) && !(s === "confirmed" && o.payment.method === "card" && o.payment.state !== "captured"));
+  const remaining = o.totalMinor - o.payment.refundedMinor;
+
+  return (
+    <div>
+      <Link href={`/s/${sub}/admin/orders`} className="text-sm text-muted underline">All orders</Link>
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <h1 className="text-2xl font-extrabold tracking-tight">Order #{o.orderNo}</h1>
+        <span className="badge badge-indigo">{o.state}</span>
+        <span className="badge badge-slate">{o.payment.method} / {o.payment.state.replace(/_/g, " ")}</span>
+        {o.flags?.refundRequired && <span className="badge badge-red">Refund due</span>}
+      </div>
+      <p className="text-sm text-muted">Placed {fmtDate(o.createdAt, "en")}</p>
+
+      <div className="mt-6 grid gap-5 lg:grid-cols-3">
+        <section className="card lg:col-span-2" aria-labelledby="it">
+          <h2 id="it" className="font-extrabold">Items</h2>
+          <table className="table mt-2">
+            <thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+            <tbody>{o.items.map((i) => <tr key={i.productId}><td>{i.name}</td><td>{i.qty}</td><td>{money(i.unitMinor)}</td><td>{money(i.lineMinor)}</td></tr>)}</tbody>
+          </table>
+          <dl className="mt-3 ms-auto max-w-xs space-y-1 text-sm">
+            <div className="flex justify-between"><dt>Subtotal</dt><dd>{money(o.subtotalMinor)}</dd></div>
+            {o.discountMinor > 0 && <div className="flex justify-between"><dt>Discount {o.discountCode}</dt><dd>-{money(o.discountMinor)}</dd></div>}
+            <div className="flex justify-between"><dt>Shipping</dt><dd>{money(o.shippingMinor)}</dd></div>
+            <div className="flex justify-between"><dt>Tax</dt><dd>{money(o.taxMinor)}</dd></div>
+            <div className="flex justify-between border-t border-line pt-1 text-base font-extrabold"><dt>Total</dt><dd>{money(o.totalMinor)}</dd></div>
+            {o.payment.refundedMinor > 0 && <div className="flex justify-between text-red-800"><dt>Refunded</dt><dd>-{money(o.payment.refundedMinor)}</dd></div>}
+          </dl>
+        </section>
+        <section className="card" aria-labelledby="cu">
+          <h2 id="cu" className="font-extrabold">Customer</h2>
+          <p className="mt-2 text-sm">{o.customer.name}<br />{o.customer.email}<br />{o.customer.phone}<br />{o.customer.address}, {o.customer.city}</p>
+          {o.customer.notes && <p className="mt-2 rounded-lg bg-amber-50 p-2 text-sm">Note: {o.customer.notes}</p>}
+        </section>
+      </div>
+
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        <section className="card" aria-labelledby="ac">
+          <h2 id="ac" className="font-extrabold">Move this order</h2>
+          {nexts.length === 0 ? <p className="mt-2 text-sm text-muted">No further steps are available to you.</p> : (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {nexts.map((s) => (
+                <ActionButton key={s} label={`Mark ${s}`} danger={s === "cancelled"} secondary={s !== "cancelled" && s !== nexts[0]}
+                  confirmText={s === "cancelled" ? "Cancel this order? Stock goes back on the shelf." : undefined}
+                  run={orderStatusAction.bind(null, sub, o._id, s)} />
+              ))}
+            </div>
+          )}
+        </section>
+        {canRefund && (
+          <section className="card" aria-labelledby="rf">
+            <h2 id="rf" className="font-extrabold">Refund</h2>
+            <p className="text-sm text-muted">Up to {money(remaining)} can still be refunded.</p>
+            {remaining > 0 && (
+              <AF action={refundAction.bind(null, sub, o._id)} submit="Issue refund" className="mt-3">
+                <input type="hidden" name="key" value={randomUUID()} />
+                <label className="field"><span>Amount</span><input className="input" name="amount" inputMode="decimal" placeholder={String(remaining / 100)} dir="ltr" required /></label>
+              </AF>
+            )}
+          </section>
+        )}
+      </div>
+
+      <section className="card mt-5" aria-labelledby="hi">
+        <h2 id="hi" className="font-extrabold">History</h2>
+        <ol className="timeline mt-4">
+          {[...o.history].reverse().map((h, i) => (
+            <li key={i}><p className="text-sm font-semibold">{h.kind}: {h.from ? `${h.from} → ` : ""}{h.to}{h.note ? ` (${h.note})` : ""}</p><p className="text-xs text-muted">{fmtDate(h.at, "en")} by {h.by}</p></li>
+          ))}
+        </ol>
+      </section>
+    </div>
+  );
+}

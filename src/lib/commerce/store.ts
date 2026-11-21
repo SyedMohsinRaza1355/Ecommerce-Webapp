@@ -4,15 +4,14 @@ import { TenantRepo } from "@/lib/tenant/repo";
 import { tenantDb } from "@/lib/tenant/schema";
 import type { TenantContext } from "@/lib/tenant/context";
 import { isHex } from "@/lib/color";
+import { slugify } from "@/lib/slug";
 import { CURRENCY_EXPONENT, parseMajor } from "@/lib/money/money";
 import { DEFAULT_SETTINGS, type Category, type Product, type Settings } from "./types";
 
 export const products = new TenantRepo<Product>("products");
 export const categories = new TenantRepo<Category>("categories");
 
-export function slugify(s: string): string {
-  return s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "item";
-}
+export { slugify };
 
 // ---------------- settings ----------------
 export async function getSettings(ctx: TenantContext): Promise<Settings> {

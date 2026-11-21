@@ -5,7 +5,7 @@ import type { TenantContext } from "@/lib/tenant/context";
 // Transactional-outbox style delivery (SRS 13): events are stored first, then a worker
 // sends with bounded exponential backoff and a dead-letter state. The "provider" is a
 // simulated mailer that records messages so they can be inspected in the admin.
-export type EmailType = "order.placed" | "order.paid" | "order.status" | "order.cancelled" | "order.refunded";
+export type EmailType = "order.placed" | "order.paid" | "order.status" | "order.cancelled" | "order.refunded" | "support.signin";
 
 type OutboxDoc = {
   _id: string;
@@ -40,6 +40,7 @@ export function renderEmail(type: EmailType, data: Record<string, unknown>): { s
     case "order.paid": return { subject: `${store}: payment received for order ${no}`, body: `We received your payment for order ${no}. Track it here: ${data.trackUrl}` };
     case "order.status": return { subject: `${store}: order ${no} is now ${data.status}`, body: `Your order ${no} is now "${data.status}". Track it here: ${data.trackUrl}` };
     case "order.cancelled": return { subject: `${store}: order ${no} was cancelled`, body: `Your order ${no} was cancelled. If you paid, a refund will follow.` };
+    case "support.signin": return { subject: `${store}: platform support signed in to your store`, body: `A platform administrator signed in to your store for support at ${data.at}. Reason: ${data.reason}. The session lasts 30 minutes and cannot change your password, email or two-step settings.` };
     case "order.refunded": return { subject: `${store}: refund for order ${no}`, body: `A refund of ${data.amount} was issued for order ${no}.` };
   }
 }

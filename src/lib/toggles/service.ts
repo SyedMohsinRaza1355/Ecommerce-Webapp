@@ -2,6 +2,8 @@ import { platformDb } from "@/lib/db/client";
 import type { InstanceRecord } from "@/lib/tenant/resolve";
 import { evaluateToggles } from "./evaluate";
 import { PACK_BY_ID } from "@/catalog/packs";
+import { tenantDb } from "@/lib/tenant/schema";
+import { issueTenantContext } from "@/lib/tenant/context";
 import type { Effective } from "./types";
 
 const TTL_MS = 30_000; // SRS 7.2: servers cache settings for at most 30 seconds
@@ -18,13 +20,15 @@ export async function getEffectiveToggles(instance: InstanceRecord): Promise<Map
   if (hit && Date.now() - hit.at < TTL_MS) return hit.value;
 
   const db = await platformDb();
-  const [plan, flags] = await Promise.all([
+  const [plan, flags, settings] = await Promise.all([
     db.collection<{ _id: string; includedToggles?: string[]; defaults?: Record<string, boolean> }>("plans").findOne({ _id: instance.planId }),
     db.collection<{ _id: string; killSwitch?: Record<string, boolean> }>("global_flags").findOne({ _id: "global" }),
+    tenantDb(issueTenantContext(instance._id)).then((t) => t.collection<{ ownerToggles?: Record<string, boolean> }>("settings").findOne({ instanceId: instance._id })),
   ]);
 
   const value = evaluateToggles({
     killSwitch: flags?.killSwitch,
+    owner: settings?.ownerToggles,
     locks: instance.toggleLocks,
     overrides: instance.toggleOverrides,
     planIncludes: plan?.includedToggles ? new Set(plan.includedToggles) : undefined,

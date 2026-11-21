@@ -1,0 +1,77 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { loadStore } from "@/lib/commerce/load";
+import { findOrderByToken } from "@/lib/commerce/orders";
+import { LiveRefresh } from "@/components/store/Bits";
+import { Icon } from "@/components/Icons";
+import { fmtDate, fmtMoney, t } from "@/lib/i18n";
+import { retryPaymentAction } from "../../actions";
+
+export const metadata = { title: "Your order", robots: { index: false, follow: false } };
+
+const STEP_TEXT: Record<string, string> = {
+  pending: "Order received", confirmed: "Order confirmed", processing: "Being prepared", ready: "Ready", fulfilled: "On its way / handed over", completed: "Completed", cancelled: "Cancelled",
+};
+
+export default async function OrderPage({ params }: { params: Promise<{ sub: string; token: string }> }) {
+  const { sub, token } = await params;
+  const s = await loadStore(sub);
+  if (s.status !== "ok") notFound();
+  const o = await findOrderByToken(s.ctx, token);
+  if (!o) notFound();
+  const L = s.locale;
+  const money = (n: number) => fmtMoney(n, o.currency, L);
+  const active = !["completed", "cancelled"].includes(o.state);
+  const events = o.history.filter((h) => h.kind === "order" || h.kind === "payment");
+
+  return (
+    <div className="mx-auto max-w-3xl">
+      <LiveRefresh active={active} />
+      <div className="card pop-in text-center">
+        <span className="icon-chip mx-auto">{o.state === "cancelled" ? Icon.lock : Icon.check}</span>
+        <h1 className="mt-4 text-2xl font-extrabold">{o.state === "cancelled" ? "Order cancelled" : t(L, "orderPlaced")}</h1>
+        <p className="mt-1 text-muted">{t(L, "orderNumber")} <strong>#{o.orderNo}</strong></p>
+        <p className="mt-3 flex flex-wrap justify-center gap-2" aria-live="polite">
+          <span className="badge badge-indigo">{t(L, "status")}: {STEP_TEXT[o.state] ?? o.state}</span>
+          <span className={`badge ${o.payment.state === "captured" ? "badge-green" : o.payment.state === "failed" ? "badge-red" : "badge-amber"}`}>
+            {o.payment.method === "cod" ? t(L, "payCod") : o.payment.state === "captured" ? t(L, "paymentReceived") : o.payment.state === "failed" ? t(L, "paymentFailed") : o.payment.state.startsWith("refund") || o.payment.state === "partially_refunded" ? "Refunded" : t(L, "awaitingPayment")}
+          </span>
+        </p>
+        {o.payment.state === "failed" && o.state === "pending" && (
+          <form action={retryPaymentAction.bind(null, sub, token)} className="mt-4"><button className="btn btn-primary">{t(L, "tryAgain")}</button></form>
+        )}
+        {o.payment.state === "requires_payment" && o.state === "pending" && <Link href={`/s/${sub}/pay/${token}`} className="btn btn-primary mt-4">{t(L, "payNow")}</Link>}
+      </div>
+
+      <div className="mt-6 grid gap-6 md:grid-cols-2">
+        <section className="card" aria-labelledby="tl">
+          <h2 id="tl" className="font-extrabold">{t(L, "timeline")}</h2>
+          <ol className="timeline mt-4">
+            {events.map((h, i) => (
+              <li key={i}>
+                <p className="font-semibold">{h.kind === "payment" ? `Payment: ${h.to}` : STEP_TEXT[h.to ?? ""] ?? h.to}</p>
+                <p className="text-xs text-muted">{fmtDate(h.at, L)}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
+        <section className="card" aria-labelledby="its">
+          <h2 id="its" className="font-extrabold">{t(L, "items")}</h2>
+          <ul className="mt-3 space-y-1 text-sm">
+            {o.items.map((i) => <li key={i.productId} className="flex justify-between gap-2"><span>{i.qty} x {i.name}</span><span>{money(i.lineMinor)}</span></li>)}
+          </ul>
+          <dl className="mt-3 space-y-1 border-t border-line pt-3 text-sm">
+            <div className="flex justify-between"><dt>{t(L, "subtotal")}</dt><dd>{money(o.subtotalMinor)}</dd></div>
+            {o.discountMinor > 0 && <div className="flex justify-between"><dt>{t(L, "discount")}</dt><dd>-{money(o.discountMinor)}</dd></div>}
+            <div className="flex justify-between"><dt>{t(L, "shipping")}</dt><dd>{o.shippingMinor ? money(o.shippingMinor) : t(L, "free")}</dd></div>
+            {o.taxMinor > 0 && <div className="flex justify-between"><dt>{t(L, "tax")}</dt><dd>{money(o.taxMinor)}</dd></div>}
+            <div className="flex justify-between text-base font-extrabold"><dt>{t(L, "total")}</dt><dd>{money(o.totalMinor)}</dd></div>
+          </dl>
+          <p className="mt-4 text-xs text-muted">{o.customer.name}, {o.customer.address}, {o.customer.city}</p>
+          {s.settings.contactEmail && <p className="mt-1 text-xs text-muted">Questions? {s.settings.contactEmail}</p>}
+        </section>
+      </div>
+      <p className="mt-6 text-center"><Link href={`/s/${sub}`} className="btn btn-secondary">{t(L, "continueShopping")}</Link></p>
+    </div>
+  );
+}

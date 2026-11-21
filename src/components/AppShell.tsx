@@ -6,20 +6,23 @@ export type NavItem = { href: string; label: string; icon?: ReactNode; exact?: b
 
 /** Shared left-sidebar admin layout used by Super Admin and store admin (SRS ST-14). */
 export function AppShell({
-  nav, title, userLabel, logout, children,
+  nav, title, userLabel, logout, children, banner, brand,
 }: {
   nav: NavItem[];
   title: string;
   userLabel: string;
   logout: () => Promise<void>;
   children: ReactNode;
+  banner?: ReactNode;
+  brand?: string;
 }) {
   return (
     <div className="min-h-screen md:flex">
+      <a href="#content" className="skip-link">Skip to main content</a>
       <aside className="sidebar-bg w-full shrink-0 text-white md:sticky md:top-0 md:h-screen md:w-64" aria-label="Sidebar">
         <div className="flex items-center justify-between px-5 py-5 md:block">
           <Logo light />
-          <p className="mt-0 rounded-full bg-white/10 px-2.5 py-0.5 text-xs text-slate-300 md:mt-3 md:inline-block">{title}</p>
+          <p className="mt-0 rounded-full bg-white/10 px-2.5 py-0.5 text-xs text-slate-300 md:mt-3 md:inline-block">{brand ? `${brand} · ${title}` : title}</p>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:block md:space-y-1 md:pb-0" aria-label="Main">
           {nav.map((n) => (
@@ -32,7 +35,8 @@ export function AppShell({
           <span className="text-sm text-muted">{userLabel}</span>
           <form action={logout}><button className="btn btn-secondary">Sign out</button></form>
         </header>
-        <main className="fade-in mx-auto max-w-6xl p-4 sm:p-8">{children}</main>
+        {banner}
+        <main id="content" className="fade-in mx-auto max-w-6xl p-4 sm:p-8">{children}</main>
       </div>
     </div>
   );

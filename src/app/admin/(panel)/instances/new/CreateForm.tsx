@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createStoreAction, type CreateState } from "./actions";
 
 type Opt = { id: string; name: string; description?: string };
@@ -12,6 +13,7 @@ export default function CreateForm({ packs, plans, baseDomain }: { packs: Opt[];
   const [sub, setSub] = useState("");
   const [check, setCheck] = useState<Check>({ state: "idle" });
   const [copied, setCopied] = useState(false);
+  const router = useRouter();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // debounced availability check while typing (SA-02)
@@ -58,7 +60,7 @@ export default function CreateForm({ packs, plans, baseDomain }: { packs: Opt[];
         <div className="mt-5 flex flex-wrap gap-3">
           <Link className="btn btn-primary" href="/admin/instances">View all stores</Link>
           <Link className="btn btn-secondary" href={`/s/${state.subdomain}`} target="_blank">Preview the store</Link>
-          <button type="button" className="btn btn-secondary" onClick={() => window.location.assign("/admin/instances/new")}>Create another</button>
+          <button type="button" className="btn btn-secondary" onClick={() => { router.push("/admin/instances/new"); router.refresh(); }}>Create another</button>
         </div>
       </div>
     );

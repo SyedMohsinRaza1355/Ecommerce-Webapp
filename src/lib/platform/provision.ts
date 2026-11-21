@@ -6,6 +6,7 @@ import type { InstanceRecord } from "@/lib/tenant/resolve";
 import { migrate, TENANT_MIGRATIONS } from "@/lib/db/migrations";
 import { appendAudit } from "@/lib/audit/log";
 import { PACK_BY_ID } from "@/catalog/packs";
+import { slugify } from "@/lib/slug";
 import type { Actor } from "@/lib/auth/rbac";
 import { authorize } from "@/lib/auth/rbac";
 import { ensureDefaultPlans, type Plan } from "./plans";
@@ -31,20 +32,20 @@ export type Invite = {
   _id: string; // tokenHash
   instanceId: string;
   email: string;
-  role: "store_owner";
+  role: "store_owner" | "manager" | "cashier" | "kitchen_ops";
   expiresAt: Date;
   usedAt: Date | null;
   createdAt: Date;
 };
 
-export async function createOwnerInvite(instanceId: string, email: string) {
+export async function createOwnerInvite(instanceId: string, email: string, role: Invite["role"] = "store_owner") {
   const db = await platformDb();
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
   // invalidate earlier unused invites for this owner
-  await db.collection<Invite>("invites").updateMany({ instanceId, usedAt: null }, { $set: { usedAt: new Date() } });
+  await db.collection<Invite>("invites").updateMany({ instanceId, email, usedAt: null }, { $set: { usedAt: new Date() } });
   await db.collection<Invite>("invites").insertOne({
-    _id: hashToken(token), instanceId, email, role: "store_owner", expiresAt, usedAt: null, createdAt: new Date(),
+    _id: hashToken(token), instanceId, email, role, expiresAt, usedAt: null, createdAt: new Date(),
   });
   return { token, expiresAt };
 }
@@ -110,9 +111,8 @@ export async function provisionInstance(
     );
     if (pack.categories.length) {
       await tenantDb.collection("categories").insertMany(
-        pack.categories.map((c, i) => ({ _id: `cat-${i + 1}` as never, instanceId, name: c, sortOrder: i })),
-        { ordered: false },
-      ).catch(() => undefined);
+        pack.categories.map((c, i) => ({ _id: `cat-${i + 1}` as never, instanceId, name: c, slug: slugify(c), sortOrder: i })),
+      );
     }
     completed.push(step);
     if (opts.failAt === step) throw new Error("injected failure");

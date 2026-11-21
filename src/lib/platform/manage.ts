@@ -105,3 +105,9 @@ export async function regenerateOwnerInvite(actor: Actor, instanceId: string, ow
   }).catch(() => undefined);
   return { ok: true, token, expiresAt };
 }
+
+/** Bump the settings version after any store-side change so other servers refetch within 30 seconds. */
+export async function bumpInstance(instanceId: string): Promise<void> {
+  await (await platformDb()).collection<InstanceRecord>("instances").updateOne({ _id: instanceId }, bump);
+  afterChange();
+}

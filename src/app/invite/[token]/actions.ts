@@ -36,13 +36,13 @@ export async function acceptInviteAction(token: string, _prev: AcceptState, form
       instanceId: claimed.instanceId,
       email: claimed.email,
       passwordHash: await hashPassword(password),
-      role: "store_owner",
+      role: claimed.role,
       createdAt: new Date(),
     });
   } catch {
     await db.collection<Invite>("invites").updateOne({ _id: claimed._id }, { $set: { usedAt: null } });
     return { error: "We could not finish setting up your account. Please try the link again." };
   }
-  await appendAudit({ actorId: claimed.email, actorRole: "store_owner", instanceId: claimed.instanceId, action: "owner.accept_invite", outcome: "success" }).catch(() => undefined);
+  await appendAudit({ actorId: claimed.email, actorRole: claimed.role, instanceId: claimed.instanceId, action: "invite.accept", outcome: "success" }).catch(() => undefined);
   redirect("/invite/done");
 }
