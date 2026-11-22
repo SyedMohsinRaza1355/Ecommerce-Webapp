@@ -48,6 +48,7 @@ describe.skipIf(process.env.SEED_FULL !== "1")("full demo store", () => {
     const owner = { userId: "seed", role: "store_owner" as const, instanceId: inst._id };
     const t = await tenantDb(ctx);
 
+    await db.collection("instances").updateOne({ _id: inst._id as never }, { $set: { listed: true } }); // show up in "Browse stores"
     // ---- clear the old catalogue, orders and customers ----
     const keep = new Set(["users", "settings", "payment_config"]);
     for (const c of await t.listCollections().toArray()) if (!keep.has(c.name) && !c.name.startsWith("system.")) await t.collection(c.name).deleteMany({});
