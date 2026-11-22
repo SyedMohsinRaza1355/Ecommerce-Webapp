@@ -112,6 +112,44 @@ describe("email building", () => {
   });
 });
 
+const CRLF = String.fromCharCode(13, 10);
+
+describe("email providers", () => {
+  const keep = { ...process.env };
+  const restore = () => { for (const k of ["BREVO_API_KEY", "RESEND_API_KEY", "EMAIL_FROM"]) { if (keep[k] === undefined) delete process.env[k]; else process.env[k] = keep[k]; } vi.unstubAllGlobals(); };
+  it("uses Brevo when its key is set: one verified sender address, no domain needed", async () => {
+    process.env.BREVO_API_KEY = "xkeysib-test"; process.env.EMAIL_FROM = "Shop <owner@gmail.com>"; delete process.env.RESEND_API_KEY;
+    const { emailProvider, sendMail, fromAddress } = await import("@/lib/email/send");
+    expect(emailProvider()).toBe("brevo");
+    expect(fromAddress()).toBe("owner@gmail.com");
+    const calls: { url: string; init: RequestInit }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => { calls.push({ url, init }); return new Response(JSON.stringify({ messageId: "<abc@brevo>" }), { status: 201 }); }));
+    const r = await sendMail({ to: "c@example.com", subject: ["Hi", "Bcc: x@y.z"].join(CRLF), text: "t", html: "<p>t</p>", fromName: ["My", "Shop"].join(CRLF), replyTo: "reply@store.test" });
+    expect(r).toEqual({ mode: "sent", id: "<abc@brevo>" });
+    expect(calls[0].url).toBe("https://api.brevo.com/v3/smtp/email");
+    expect((calls[0].init.headers as Record<string, string>)["api-key"]).toBe("xkeysib-test");
+    const body = JSON.parse(String(calls[0].init.body));
+    expect(body.sender).toEqual({ name: "MyShop", email: "owner@gmail.com" });
+    expect(body.to).toEqual([{ email: "c@example.com" }]);
+    expect(String(body.subject).split("").some((c: string) => c.charCodeAt(0) < 32)).toBe(false);
+    expect(body.replyTo).toEqual({ email: "reply@store.test" });
+    restore();
+  });
+  it("reports provider errors, prefers Brevo over Resend, and records only when nothing is configured", async () => {
+    process.env.BREVO_API_KEY = "k"; process.env.RESEND_API_KEY = "r"; process.env.EMAIL_FROM = "a@b.co";
+    const { emailProvider, sendMail } = await import("@/lib/email/send");
+    expect(emailProvider()).toBe("brevo");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ message: "Sender not verified" }), { status: 400 })));
+    await expect(sendMail({ to: "c@example.com", subject: "s", text: "t", html: "h", fromName: "S" })).rejects.toThrow(/400.*Sender not verified/);
+    delete process.env.BREVO_API_KEY; delete process.env.RESEND_API_KEY;
+    expect(emailProvider()).toBeNull();
+    expect(await sendMail({ to: "c@example.com", subject: "s", text: "t", html: "h", fromName: "S" })).toEqual({ mode: "recorded" });
+    delete process.env.EMAIL_FROM; process.env.BREVO_API_KEY = "k";
+    expect(emailProvider()).toBeNull(); // a key without a sender address is not enough
+    restore();
+  });
+});
+
 describe.skipIf(!HAS_DB)("real payments, accounts and email delivery (Atlas, synthetic tenants)", () => {
   const created: string[] = [];
   let A: TenantContext, B: TenantContext, product: string;

@@ -1,9 +1,10 @@
 import { AF } from "./Forms";
+import ImageUploader from "./ImageUploader";
 import type { AdminState } from "@/app/s/[sub]/admin/actions";
 
 type P = { name?: string; description?: string; price?: string; compareAt?: string; categoryId?: string; imageUrl?: string; stock?: number; trackStock?: boolean; backorder?: boolean; status?: string };
 
-export function ProductForm({ action, categories, initial = {}, submit }: { action: (p: AdminState, f: FormData) => Promise<AdminState>; categories: { id: string; name: string }[]; initial?: P; submit: string }) {
+export function ProductForm({ action, upload, categories, initial = {}, submit }: { action: (p: AdminState, f: FormData) => Promise<AdminState>; upload: (p: AdminState, f: FormData) => Promise<AdminState>; categories: { id: string; name: string }[]; initial?: P; submit: string }) {
   return (
     <AF action={action} submit={submit} className="card max-w-2xl">
       <label className="field"><span>Name</span><input className="input" name="name" defaultValue={initial.name} required maxLength={120} /></label>
@@ -14,7 +15,8 @@ export function ProductForm({ action, categories, initial = {}, submit }: { acti
         <label className="field"><span>Category</span>
           <select className="input" name="categoryId" defaultValue={initial.categoryId ?? ""}><option value="">None</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
         </label>
-        <label className="field"><span>Image link (https)</span><input className="input" name="imageUrl" defaultValue={initial.imageUrl} placeholder="https://..." dir="ltr" /></label>
+        <div className="sm:col-span-2"><ImageUploader upload={upload} targetName="imageUrl" /></div>
+        <label className="field"><span>Image link (https or uploaded)</span><input className="input" name="imageUrl" defaultValue={initial.imageUrl} placeholder="https://..." dir="ltr" /></label>
         <label className="field"><span>Stock</span><input className="input" name="stock" type="number" min={0} step={1} defaultValue={initial.stock ?? 0} dir="ltr" /></label>
         <label className="field"><span>Status</span>
           <select className="input" name="status" defaultValue={initial.status ?? "draft"}><option value="draft">Draft (hidden)</option><option value="published">Published</option></select>

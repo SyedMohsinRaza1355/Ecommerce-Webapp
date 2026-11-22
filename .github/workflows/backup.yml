@@ -1,0 +1,42 @@
+name: Weekly database backup
+on:
+  schedule:
+    - cron: "0 2 * * 0" # Sundays 02:00 UTC
+  workflow_dispatch: {}
+
+# The backup contains personal data, so it is encrypted with BACKUP_PASSPHRASE before it is stored.
+# This repository is public: never upload an unencrypted backup.
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Check secrets
+        run: |
+          [ -n "$MONGODB_URI" ] && [ -n "$BACKUP_PASSPHRASE" ] || { echo "Add the MONGODB_URI and BACKUP_PASSPHRASE repository secrets first"; exit 1; }
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+      - name: Dump
+        run: node scripts/backup.mjs backup.ndjson
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          PLATFORM_DB_NAME: platform
+      - name: Compress and encrypt
+        run: |
+          gzip -9 backup.ndjson
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in backup.ndjson.gz -out backup.ndjson.gz.enc -pass env:BACKUP_PASSPHRASE
+          rm backup.ndjson.gz
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: database-backup-${{ github.run_id }}
+          path: backup.ndjson.gz.enc
+          retention-days: 60
+          if-no-files-found: error

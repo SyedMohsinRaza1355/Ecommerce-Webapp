@@ -537,7 +537,7 @@ export async function lookAction(sub: string, _p: AdminState, form: FormData): P
     const title = fd(form, `title${i}`).trim(), text = fd(form, `text${i}`).trim(), imageUrl = fd(form, `image${i}`).trim(), link = fd(form, `link${i}`).trim();
     if (!title && !text && !imageUrl) continue;
     if (title.length > 80 || text.length > 200) return { error: `Slide ${i}: title up to 80 and text up to 200 characters.` };
-    if (imageUrl && !/^https:\/\/[^\s"'<>]+$/i.test(imageUrl)) return { error: `Slide ${i}: the image link must start with https://` };
+    if (imageUrl && !/^https:\/\/[^\s"'<>]+$/i.test(imageUrl) && !/^\/s\/[a-z0-9-]{1,40}\/img\/[0-9a-f-]{36}$/.test(imageUrl)) return { error: `Slide ${i}: the image link must start with https://` };
     if (link && !/^(\/|https:\/\/)[^\s"'<>]*$/i.test(link)) return { error: `Slide ${i}: the button link must start with / or https://` };
     if (link.startsWith("//")) return { error: `Slide ${i}: the button link is not valid.` };
     hero.push({ title, text, imageUrl, link });
@@ -636,4 +636,20 @@ export async function apiKeyRevokeAction(sub: string, id: string): Promise<Admin
   await record(g.store, g.staff, "apikey.revoke", id);
   revalidatePath(`${home(sub)}/integrations`);
   return { message: "Key revoked. It stops working immediately." };
+}
+
+// ---------------- picture upload ----------------
+import { saveImage } from "@/lib/commerce/images";
+
+/** Used by the product, logo and banner forms. Needs permission to edit either the catalogue or the look of the store. */
+export async function uploadImageAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = (await guardSoft(sub, "catalog.manage")) ?? (await guardSoft(sub, "branding.edit"));
+  if (!g) return { error: "You do not have permission to upload pictures." };
+  const file = form.get("file");
+  if (!(file instanceof File)) return { error: "Choose a picture first." };
+  if (file.size > 400 * 1024) return { error: "That picture is too big. Pictures are shrunk automatically before upload; try a different one." };
+  const r = await saveImage(g.store.ctx, sub, new Uint8Array(await file.arrayBuffer()));
+  if (!r.ok) return { error: r.error };
+  await record(g.store, g.staff, "image.upload");
+  return { link: r.url, message: "Uploaded." };
 }

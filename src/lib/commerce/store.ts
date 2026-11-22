@@ -6,6 +6,7 @@ import type { TenantContext } from "@/lib/tenant/context";
 import { isHex } from "@/lib/color";
 import { slugify } from "@/lib/slug";
 import { CURRENCY_EXPONENT, parseMajor } from "@/lib/money/money";
+import { IMAGE_PATH_RE } from "./images";
 import { DEFAULT_SETTINGS, type Category, type Product, type Settings } from "./types";
 
 export const products = new TenantRepo<Product>("products");
@@ -25,7 +26,7 @@ export async function getSettings(ctx: TenantContext): Promise<Settings> {
   } as Settings;
 }
 
-const httpsUrl = z.string().trim().max(500).refine((u) => u === "" || /^https:\/\/[^\s"'<>]+$/i.test(u), "Use an https:// link");
+const httpsUrl = z.string().trim().max(500).refine((u) => u === "" || /^https:\/\/[^\s"'<>]+$/i.test(u) || IMAGE_PATH_RE.test(u), "Use an https:// link or upload a picture");
 
 export const BrandingInput = z.object({
   storeName: z.string().trim().min(2, "Enter at least 2 characters").max(60),

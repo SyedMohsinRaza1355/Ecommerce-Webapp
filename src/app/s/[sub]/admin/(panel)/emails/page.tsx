@@ -2,7 +2,8 @@ import { guard } from "@/lib/commerce/guard";
 import { tenantDb } from "@/lib/tenant/schema";
 import { fmtDate } from "@/lib/i18n";
 import { ActionButton } from "@/components/admin/Forms";
-import { processOutboxAction } from "@/app/s/[sub]/admin/actions";
+import { processOutboxAction, testEmailAction } from "@/app/s/[sub]/admin/actions";
+import { emailProvider } from "@/lib/email/send";
 
 export const metadata = { title: "Messages" };
 
@@ -18,7 +19,9 @@ export default async function EmailsPage({ params }: { params: Promise<{ sub: st
   return (
     <div>
       <h1 className="text-2xl font-extrabold tracking-tight">Customer messages</h1>
-      <p className="text-muted">Order emails are queued and sent with automatic retries. This build records messages here instead of sending to a real mailbox.</p>
+      <p className="text-muted">Order emails are queued and sent with automatic retries.</p>
+      {emailProvider() ? <p role="status" className="ok mt-2">Real email sending is on (via {emailProvider() === "brevo" ? "Brevo" : "Resend"}). Customers receive these messages in their inbox.</p> : <p role="status" className="mt-2 rounded-xl bg-amber-50 p-3 text-sm">Real email sending is not set up yet, so messages are only recorded here. The platform operator needs to add an email provider key.</p>}
+      <div className="mt-3"><ActionButton label="Send a test email to me" run={testEmailAction.bind(null, sub)} /></div>
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <span className="badge badge-amber">{pending} waiting</span>
         <span className={`badge ${dead ? "badge-red" : "badge-slate"}`}>{dead} failed for good</span>

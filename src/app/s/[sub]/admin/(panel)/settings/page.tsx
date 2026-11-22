@@ -2,7 +2,8 @@ import { guard } from "@/lib/commerce/guard";
 import { authorize } from "@/lib/auth/rbac";
 import { AF } from "@/components/admin/Forms";
 import BrandPicker from "./BrandPicker";
-import { brandingAction, commerceAction } from "@/app/s/[sub]/admin/actions";
+import ImageUploader from "@/components/admin/ImageUploader";
+import { brandingAction, commerceAction, uploadImageAction } from "@/app/s/[sub]/admin/actions";
 import { formatMajor, money, CURRENCY_EXPONENT } from "@/lib/money/money";
 
 export const metadata = { title: "Settings" };
@@ -21,7 +22,8 @@ export default async function SettingsPage({ params }: { params: Promise<{ sub: 
         <label className="field"><span>Store name</span><input className="input" name="storeName" defaultValue={b.storeName || store.instance.name} required maxLength={60} /></label>
         <label className="field"><span>Tagline</span><input className="input" name="tagline" defaultValue={b.tagline} maxLength={120} /></label>
         <BrandPicker initial={b.primary} />
-        <label className="field"><span>Logo link (https)</span><input className="input" name="logoUrl" defaultValue={b.logoUrl} placeholder="https://..." dir="ltr" /></label>
+        <ImageUploader upload={uploadImageAction.bind(null, sub)} targetName="logoUrl" />
+        <label className="field"><span>Logo link (https or uploaded)</span><input className="input" name="logoUrl" defaultValue={b.logoUrl} placeholder="https://..." dir="ltr" /></label>
         <label className="field"><span>Contact email</span><input className="input" name="contactEmail" type="email" defaultValue={s.contactEmail} dir="ltr" /><p className="hint">Shown to customers on their order page.</p></label>
         <label className="field"><span>Default language</span>
           <select className="input" name="locale" defaultValue={s.locale}><option value="en">English</option><option value="ur">اردو (Urdu, right to left)</option></select>

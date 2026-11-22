@@ -4,7 +4,7 @@ import { categories, products } from "@/lib/commerce/store";
 import { formatMajor, money } from "@/lib/money/money";
 import { ProductForm } from "@/components/admin/ProductForm";
 import { ActionButton } from "@/components/admin/Forms";
-import { saveProductAction, deleteProductAction } from "@/app/s/[sub]/admin/actions";
+import { saveProductAction, deleteProductAction, uploadImageAction } from "@/app/s/[sub]/admin/actions";
 
 export const metadata = { title: "Edit product" };
 
@@ -20,6 +20,7 @@ export default async function EditProduct({ params }: { params: Promise<{ sub: s
       <h1 className="mb-5 text-2xl font-extrabold tracking-tight">Edit product</h1>
       <ProductForm
         action={saveProductAction.bind(null, sub, id)}
+        upload={uploadImageAction.bind(null, sub)}
         categories={cats.map((c) => ({ id: c._id, name: c.name }))}
         submit="Save changes"
         initial={{ name: p.name, description: p.description, price: formatMajor(money(p.priceMinor, cur)), compareAt: p.compareAtMinor ? formatMajor(money(p.compareAtMinor, cur)) : "", categoryId: p.categoryId ?? "", imageUrl: p.imageUrl, stock: p.stock, trackStock: p.trackStock, backorder: p.backorder, status: p.status }}

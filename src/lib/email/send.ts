@@ -1,29 +1,55 @@
-// Real email delivery through Resend's HTTPS API. If no key is configured the platform keeps
-// working in "recorded only" mode: messages are stored and visible in the admin but not sent.
+// Real email delivery. Brevo (free plan, one verified sender address, no domain needed) or Resend
+// (needs a verified domain). If neither is configured the platform keeps working in "recorded only"
+// mode: messages are stored and visible in the admin but not sent.
 export type MailInput = { to: string; subject: string; text: string; html: string; fromName: string; replyTo?: string };
 export type MailResult = { mode: "sent" | "recorded"; id?: string };
 
-export function emailMode(): "live" | "recorded" {
-  return process.env.RESEND_API_KEY && process.env.EMAIL_FROM ? "live" : "recorded";
+export type Provider = "brevo" | "resend" | null;
+
+export function emailProvider(): Provider {
+  if (!process.env.EMAIL_FROM) return null;
+  if (process.env.BREVO_API_KEY) return "brevo";
+  if (process.env.RESEND_API_KEY) return "resend";
+  return null;
 }
+
+export function emailMode(): "live" | "recorded" {
+  return emailProvider() ? "live" : "recorded";
+}
+
+/** EMAIL_FROM may be "orders@x.com" or "Name <orders@x.com>"; only the address is used. */
+export function fromAddress(): string {
+  const raw = process.env.EMAIL_FROM ?? "";
+  return /<([^<>\s]+)>/.exec(raw)?.[1] ?? raw.trim();
+}
+
+const cleanName = (name: string) => name.replace(/[^\p{L}\p{N} .,&'-]/gu, "").trim().slice(0, 60) || "Storeforge";
 
 /** "Store Name" <orders@platform.com>. The display name is sanitised so a store name cannot inject headers. */
 export function fromHeader(name: string): string {
-  const clean = name.replace(/[^\p{L}\p{N} .,&'-]/gu, "").trim().slice(0, 60) || "Storeforge";
-  return `${clean} <${process.env.EMAIL_FROM}>`;
+  return `${cleanName(name)} <${fromAddress()}>`;
 }
 
 export async function sendMail(m: MailInput): Promise<MailResult> {
-  if (emailMode() === "recorded") return { mode: "recorded" };
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { authorization: `Bearer ${process.env.RESEND_API_KEY}`, "content-type": "application/json" },
-    body: JSON.stringify({ from: fromHeader(m.fromName), to: [m.to], subject: m.subject.replace(/[\r\n]+/g, " ").slice(0, 200), text: m.text, html: m.html, ...(m.replyTo ? { reply_to: m.replyTo } : {}) }),
-    signal: AbortSignal.timeout(15_000),
-  });
-  const json = (await res.json().catch(() => ({}))) as { id?: string; message?: string };
+  const provider = emailProvider();
+  if (!provider) return { mode: "recorded" };
+  const subject = m.subject.replace(/[\u000d\u000a]+/g, " ").slice(0, 200);
+  const res = provider === "brevo"
+    ? await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: { "api-key": process.env.BREVO_API_KEY!, "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ sender: { name: cleanName(m.fromName), email: fromAddress() }, to: [{ email: m.to }], subject, textContent: m.text, htmlContent: m.html, ...(m.replyTo ? { replyTo: { email: m.replyTo } } : {}) }),
+        signal: AbortSignal.timeout(15_000),
+      })
+    : await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { authorization: `Bearer ${process.env.RESEND_API_KEY}`, "content-type": "application/json" },
+        body: JSON.stringify({ from: fromHeader(m.fromName), to: [m.to], subject, text: m.text, html: m.html, ...(m.replyTo ? { reply_to: m.replyTo } : {}) }),
+        signal: AbortSignal.timeout(15_000),
+      });
+  const json = (await res.json().catch(() => ({}))) as { id?: string; messageId?: string; message?: string };
   if (!res.ok) throw new Error(`Email provider error ${res.status}${json.message ? `: ${json.message}` : ""}`);
-  return { mode: "sent", id: json.id };
+  return { mode: "sent", id: json.id ?? json.messageId };
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
