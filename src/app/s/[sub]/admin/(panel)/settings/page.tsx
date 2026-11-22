@@ -3,7 +3,7 @@ import { authorize } from "@/lib/auth/rbac";
 import { AF } from "@/components/admin/Forms";
 import BrandPicker from "./BrandPicker";
 import ImageUploader from "@/components/admin/ImageUploader";
-import { brandingAction, commerceAction, uploadImageAction } from "@/app/s/[sub]/admin/actions";
+import { brandingAction, commerceAction, uploadImageAction, directoryAction } from "@/app/s/[sub]/admin/actions";
 import { formatMajor, money, CURRENCY_EXPONENT } from "@/lib/money/money";
 
 export const metadata = { title: "Settings" };
@@ -14,6 +14,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ sub: 
   const s = store.settings;
   const canCommerce = authorize(staff.actor, "settings.commerce", store.ctx).allow;
   const b = s.branding;
+  const listed = Boolean((store.instance as { listed?: boolean }).listed);
   return (
     <div className="max-w-2xl">
       <h1 className="text-2xl font-extrabold tracking-tight">Settings</h1>
@@ -28,6 +29,12 @@ export default async function SettingsPage({ params }: { params: Promise<{ sub: 
         <label className="field"><span>Default language</span>
           <select className="input" name="locale" defaultValue={s.locale}><option value="en">English</option><option value="ur">اردو (Urdu, right to left)</option></select>
         </label>
+      </AF>
+
+      <h2 className="mt-8 text-lg font-extrabold">Public directory</h2>
+      <AF action={directoryAction.bind(null, sub)} submit="Save" className="card mt-3">
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="listed" defaultChecked={listed} /> Show my store on the Storeforge &quot;Browse stores&quot; page</label>
+        <p className="hint mb-3">Shoppers can find your shop by name. Leave it off to keep the store private: only people with your link can visit.</p>
       </AF>
 
       {canCommerce ? (

@@ -34,7 +34,9 @@ export default async function OrderDetail({ params }: { params: Promise<{ sub: s
       <p className="text-sm text-muted">Placed {fmtDate(o.createdAt, "en")}</p>
       {(store.eff.get("F-036")?.enabled !== false || store.eff.get("F-070")?.enabled === true) && (
         <p className="mt-2 flex flex-wrap gap-2">
-          {store.eff.get("F-036")?.enabled !== false && <a className="btn btn-secondary" href={`/s/${sub}/admin/print/${o._id}`} target="_blank" rel="noopener noreferrer">Print receipt</a>}
+          {store.eff.get("F-036")?.enabled !== false && <a className="btn btn-secondary" href={`/s/${sub}/admin/print/${o._id}`} target="_blank" rel="noopener noreferrer">Print receipt (A4)</a>}
+          {store.eff.get("F-036")?.enabled !== false && <a className="btn btn-secondary" href={`/s/${sub}/admin/print/${o._id}?kind=thermal`} target="_blank" rel="noopener noreferrer">Print receipt (80 mm)</a>}
+          {store.eff.get("F-036")?.enabled !== false && <a className="btn btn-secondary" href={`/s/${sub}/admin/print/${o._id}?kind=ticket`} target="_blank" rel="noopener noreferrer">Print kitchen ticket</a>}
           {store.eff.get("F-070")?.enabled === true && <a className="btn btn-secondary" href={`/s/${sub}/admin/print/${o._id}?kind=slip`} target="_blank" rel="noopener noreferrer">Print packing slip</a>}
         </p>
       )}

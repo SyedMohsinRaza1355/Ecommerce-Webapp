@@ -35,7 +35,7 @@ let idA = "", idB = "", subA = "demo-burgers", subB = "sec-b";
 let ownerA = "", ownerB = "", cashierA = "", kitchenA = "";
 let cookieOwnerA = "", cookieOwnerB = "", cookieCashierA = "", cookieKitchenA = "", cookieSA = "", orderTokenA = "", productSlugA = "zinger-burger";
 
-const ADMIN_PAGES = ["", "/orders", "/products", "/products/new", "/categories", "/discounts", "/features", "/settings", "/staff", "/activity", "/emails", "/privacy", "/security", "/payments", "/content", "/inbox", "/reports", "/promotions", "/setup", "/integrations", "/help"];
+const ADMIN_PAGES = ["", "/orders", "/products", "/products/new", "/categories", "/discounts", "/features", "/settings", "/staff", "/activity", "/emails", "/privacy", "/security", "/payments", "/content", "/inbox", "/reports", "/promotions", "/setup", "/integrations", "/help", "/pos", "/kitchen"];
 
 describe.skipIf(!ENABLED)("HTTP security: authentication, authorisation and tenant isolation", () => {
   beforeAll(async () => {
@@ -122,7 +122,7 @@ describe.skipIf(!ENABLED)("HTTP security: authentication, authorisation and tena
       expect((await call(`/s/${subA}/admin/orders`, { cookie: cookieCashierA })).status).toBe(200);
     });
     it("kitchen staff only see orders and stock, nothing financial", async () => {
-      for (const p of ["/staff", "/features", "/settings", "/discounts", "/privacy", "/products/new", "/categories", "/activity", "/emails", "/payments", "/content", "/inbox", "/reports", "/promotions", "/setup", "/integrations"]) {
+      for (const p of ["/staff", "/features", "/settings", "/discounts", "/privacy", "/products/new", "/categories", "/activity", "/emails", "/payments", "/content", "/inbox", "/reports", "/promotions", "/setup", "/integrations", "/pos"]) {
         expect((await call(`/s/${subA}/admin${p}`, { cookie: cookieKitchenA })).status, p).toBe(307);
       }
       expect((await call(`/s/${subA}/admin/orders`, { cookie: cookieKitchenA })).status).toBe(200);
@@ -413,5 +413,68 @@ describe.skipIf(!ENABLED)("HTTP: public API, blog, unsubscribe and owner-only in
     expect((await call(`${S()}/admin/integrations`)).status).toBe(307);
     expect((await call(`${S()}/admin/help`, { cookie: cookieCashierA })).status).toBe(200); // help is for every signed-in member
     expect((await call(`${S()}/admin/export/ledger`, { cookie: cookieOwnerA })).status).toBe(403); // accounting export is off by default
+  });
+});
+
+describe.skipIf(!ENABLED)("HTTP: roles land where they work, till, kitchen board, printing, password reset and the store directory", () => {
+  const S = () => `/s/${subA}`;
+  it("each role lands on its own screen after signing in", async () => {
+    const k = await call(`${S()}/admin`, { cookie: cookieKitchenA });
+    expect(k.status).toBe(307);
+    expect(k.location).toContain("/admin/kitchen");
+    const c = await call(`${S()}/admin`, { cookie: cookieCashierA });
+    expect(c.status).toBe(307);
+    expect(c.location).toContain("/admin/pos");
+    expect((await call(`${S()}/admin`, { cookie: cookieOwnerA })).status).toBe(200);
+  });
+  it("kitchen board: kitchen and owner yes, signed-out and other stores no; till: not for kitchen", async () => {
+    expect((await call(`${S()}/admin/kitchen`, { cookie: cookieKitchenA })).status).toBe(200);
+    expect((await call(`${S()}/admin/kitchen`, { cookie: cookieOwnerA })).status).toBe(200);
+    expect((await call(`${S()}/admin/kitchen`)).status).toBe(307);
+    expect((await call(`${S()}/admin/kitchen`, { cookie: cookieOwnerB })).status).toBe(307);
+    expect((await call(`${S()}/admin/pos`, { cookie: cookieCashierA })).status).toBe(200);
+    expect((await call(`${S()}/admin/pos`, { cookie: cookieKitchenA })).status).toBe(307);
+  });
+  it("kitchen staff can print tickets but not receipts; cashiers can print both", async () => {
+    const ctxA = issueTenantContext(idA);
+    const o = (await orders.find(ctxA, {}, 1))[0];
+    if (!o) return;
+    const base = `${S()}/admin/print/${o._id}`;
+    const ticket = await call(`${base}?kind=ticket`, { cookie: cookieKitchenA });
+    expect(ticket.status).toBe(200);
+    expect(ticket.body).toContain(`#${o.orderNo}`);
+    expect((await call(`${base}?kind=thermal`, { cookie: cookieKitchenA })).status).toBe(404);
+    expect((await call(base, { cookie: cookieKitchenA })).status).toBe(404);
+    expect((await call(`${base}?kind=thermal`, { cookie: cookieCashierA })).status).toBe(200);
+    expect((await call(`${base}?kind=ticket`)).status).toBe(307);
+    expect((await call(`${base}?kind=ticket`, { cookie: cookieOwnerB })).status).toBe(307);
+    expect((await call(`${base}?kind=%3Cscript%3E`, { cookie: cookieOwnerA })).status).toBe(200); // unknown kinds fall back to the normal receipt
+  });
+  it("staff password reset pages are public, reveal nothing, and reject junk tokens", async () => {
+    expect((await call(`${S()}/admin/forgot`)).status).toBe(200);
+    const login = await call(`${S()}/admin/login`);
+    expect(login.body).toContain("Forgot your password");
+    expect((await call(`${S()}/admin/reset/${"a".repeat(43)}`)).status).toBe(200);
+    expect((await call(`/s/does-not-exist-store/admin/forgot`)).status).toBe(404);
+  });
+  it("the public store directory lists only opted-in active stores and handles odd searches", async () => {
+    const all = await call("/stores");
+    expect(all.status).toBe(200);
+    expect(all.headers["content-security-policy"]).toContain("nonce-");
+    for (const q of ["%24ne", ".*", "%00", "a".repeat(500), "<script>alert(1)</script>"]) {
+      const r = await call(`/stores?q=${q}`);
+      expect(r.status, q).toBe(200);
+      expect(r.body).not.toContain("<script>alert(1)</script>");
+    }
+    const { platformDb: pdb } = await import("@/lib/db/client");
+    const db = await pdb();
+    await db.collection("instances").updateOne({ _id: idA as never }, { $set: { listed: true } });
+    let page = await call("/stores?q=burgers");
+    for (let i = 0; i < 4 && !page.body.includes("Visit shop"); i++) { await new Promise((r) => setTimeout(r, 800)); page = await call("/stores?q=burgers"); }
+    expect(page.body).toContain(`/s/${subA}`);
+    await db.collection("instances").updateOne({ _id: idA as never }, { $set: { listed: false } });
+    const hidden = await call("/stores?q=burgers");
+    expect(hidden.body).not.toContain(`href="/s/${subA}"`);
+    expect((await call("/")).body).toContain("Browse stores");
   });
 });

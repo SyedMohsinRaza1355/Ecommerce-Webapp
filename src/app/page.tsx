@@ -35,6 +35,7 @@ export default async function Home() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <Logo />
           <nav className="flex items-center gap-2" aria-label="Main">
+            <Link href="/stores" className="btn btn-secondary hidden sm:inline-flex">Browse stores</Link>
             <Link href="#features" className="btn btn-secondary hidden sm:inline-flex">Features</Link>
             <Link href="#plans" className="btn btn-secondary hidden sm:inline-flex">Plans</Link>
             <Link href="/signin" className="btn btn-secondary">Store owner sign in</Link>
@@ -57,6 +58,7 @@ export default async function Home() {
           </p>
           <div className="reveal reveal-4 mt-9 flex flex-wrap justify-center gap-3">
             <Link href="#plans" className="btn btn-primary">See plans</Link>
+            <Link href="/stores" className="btn border-white/25 bg-white/10 text-white hover:bg-white/20">Browse stores</Link>
             <Link href="/toggles" className="btn border-white/25 bg-white/10 text-white hover:bg-white/20">Explore the 145 features</Link>
             {demoExists && <Link href="/s/demo" className="btn border-white/25 bg-white/10 text-white hover:bg-white/20">Visit the demo store</Link>}
           </div>

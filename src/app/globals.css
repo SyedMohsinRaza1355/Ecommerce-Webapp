@@ -146,3 +146,8 @@ body {
 .timeline li::before { content: ""; position: absolute; inset-inline-start: -1.3rem; top: .3rem; width: .7rem; height: .7rem; border-radius: 50%; background: var(--brand-primary); box-shadow: 0 0 0 4px #fff; }
 [dir="rtl"] body, [dir="rtl"] { font-family: "Noto Nastaliq Urdu", "Noto Naskh Arabic", "Segoe UI", ui-sans-serif, system-ui, sans-serif; }
 [dir="rtl"] .urdu-line { line-height: 1.9; }
+
+/* Printing: 80 mm receipt and ticket pages for till printers */
+@page thermal { size: 80mm auto; margin: 3mm; }
+.thermal-page { page: thermal; width: 72mm; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+@media print { .print\:hidden { display: none !important; } body { background: #fff !important; } }

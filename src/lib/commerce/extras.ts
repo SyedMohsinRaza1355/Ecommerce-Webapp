@@ -228,7 +228,7 @@ export async function productReport(ctx: TenantContext, from: Date, to: Date) {
 
 export async function customerReport(ctx: TenantContext, from: Date, to: Date) {
   return (await db(ctx)).collection("orders").aggregate<{ _id: string; name: string; orders: number; spentMinor: number; last: Date }>([
-    { $match: { instanceId: ctx.instanceId, createdAt: { $gte: from, $lt: to }, ...live, "customer.email": { $ne: "[deleted]" } } },
+    { $match: { instanceId: ctx.instanceId, createdAt: { $gte: from, $lt: to }, ...live, "customer.email": { $nin: ["[deleted]", ""] } } },
     { $group: { _id: "$customer.email", name: { $last: "$customer.name" }, orders: { $sum: 1 }, spentMinor: { $sum: "$totalMinor" }, last: { $max: "$createdAt" } } },
     { $sort: { spentMinor: -1 } }, { $limit: 100 },
   ]).toArray();

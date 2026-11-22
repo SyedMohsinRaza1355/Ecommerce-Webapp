@@ -45,6 +45,9 @@ export default async function StaffPage({ params }: { params: Promise<{ sub: str
                 <td>{u.twoFactor ? <span className="badge badge-green">On</span> : <span className="badge badge-amber">Off</span>}</td>
                 <td className="text-xs">{u.lastLoginAt ? fmtDate(u.lastLoginAt, "en") : "Never"}</td>
                 <td className="text-end">
+                  {u.role !== "store_owner" && u.twoFactor && (
+                    <ActionButton label="Reset two-step" confirmText="Remove this person's authenticator? They must set up a new one next time they sign in. Do this if they lost their phone." run={staffChangeAction.bind(null, sub, u.id, { resetTwoFactor: true })} />
+                  )}
                   {u.role !== "store_owner" && (
                     <ActionButton label={u.disabled ? "Enable" : "Disable"} danger={!u.disabled} run={staffChangeAction.bind(null, sub, u.id, { disabled: !u.disabled })} confirmText={u.disabled ? undefined : "Disable this person? They are signed out immediately."} />
                   )}

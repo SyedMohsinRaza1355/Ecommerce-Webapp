@@ -250,6 +250,95 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
   return { ok: true, orderId: id, orderNo, trackingToken, needsPayment: input.method !== "cod" };
 }
 
+// ---------------- in-store sale (cashier till) ----------------
+export type PosInput = {
+  items: { productId: string; qty: number }[];
+  tender: "cash" | "card" | "wallet";
+  receivedMinor?: number;
+  customerName?: string;
+  idempotencyKey: string;
+  discountPercent?: number;
+};
+
+export type PosResult = { ok: true; orderId: string; orderNo: number; totalMinor: number; changeMinor: number; duplicate?: boolean } | { ok: false; error: string };
+
+/**
+ * A sale at the counter: paid on the spot, so the order is created already completed and captured.
+ * It uses the same price, tax, promotion and stock rules as the online shop (no shipping).
+ */
+export async function placeStaffOrder(ctx: TenantContext, settings: Settings, feat: Features, actor: Actor, input: PosInput): Promise<PosResult> {
+  if (!["store_owner", "manager", "cashier", "super_admin"].includes(actor.role)) return { ok: false, error: "Your role cannot make sales." };
+  const dup = (await orders.find(ctx, { idempotencyKey: input.idempotencyKey } as never, 1))[0];
+  if (dup) return { ok: true, orderId: dup._id, orderNo: dup.orderNo, totalMinor: dup.totalMinor, changeMinor: dup.payment.pos?.changeMinor ?? 0, duplicate: true };
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(input.idempotencyKey)) return { ok: false, error: "Invalid request. Reload the page." };
+  if (!["cash", "card", "wallet"].includes(input.tender)) return { ok: false, error: "Choose how the customer paid." };
+  if (!input.items.length) return { ok: false, error: "Add something to the sale first." };
+  const qtyBy = new Map<string, number>();
+  for (const i of input.items) {
+    if (!Number.isInteger(i.qty) || i.qty < 1 || i.qty > 99) return { ok: false, error: "Quantities must be between 1 and 99." };
+    qtyBy.set(i.productId, (qtyBy.get(i.productId) ?? 0) + i.qty);
+  }
+  if (input.discountPercent !== undefined && (!Number.isFinite(input.discountPercent) || input.discountPercent < 0 || input.discountPercent > 100)) return { ok: false, error: "A discount must be between 0 and 100 percent." };
+  if (input.discountPercent && !["store_owner", "manager", "super_admin"].includes(actor.role)) return { ok: false, error: "Only a manager or the owner can give a discount at the till." };
+  const name = (input.customerName ?? "").trim().slice(0, 100) || "Walk-in customer";
+
+  const found = await (await tenantDb(ctx)).collection<Product>("products").find({ instanceId: ctx.instanceId, _id: { $in: [...qtyBy.keys()] }, status: "published" }).toArray();
+  if (found.length !== qtyBy.size) return { ok: false, error: "Some items are no longer available. Refresh the till." };
+  const counts = (p: Product) => feat.stockTracking && p.trackStock && !(feat.backorders && p.backorder);
+  for (const p of found) if (counts(p) && p.stock < qtyBy.get(p._id)!) return { ok: false, error: `Only ${p.stock} of "${p.name}" left.` };
+
+  const lines: Line[] = found.map((p) => ({ productId: p._id, name: p.name, unitMinor: p.priceMinor, qty: qtyBy.get(p._id)! }));
+  const promo = feat.autoPromos || feat.flashSales
+    ? bestPromo(await listPromos(ctx), found.map((p) => ({ productId: p._id, categoryId: p.categoryId ?? null, lineMinor: p.priceMinor * qtyBy.get(p._id)! })), new Date(), { auto: !!feat.autoPromos, flash: !!feat.flashSales })
+    : null;
+  const subtotal = lines.reduce((n, l) => n + l.unitMinor * l.qty, 0);
+  const manualBps = Math.round((input.discountPercent ?? 0) * 100);
+  const useManual = manualBps > 0 && Math.round((subtotal * manualBps) / 10000) >= (promo?.discountMinor ?? 0);
+  const totals = computeTotals(lines, {
+    currency: settings.currency, taxBps: settings.taxBps, taxEnabled: feat.tax, shippingFlatMinor: 0, freeShippingOverMinor: null,
+    discountBps: useManual ? manualBps : 0, fixedDiscountMinor: useManual ? 0 : promo?.discountMinor ?? 0,
+  });
+  let received = input.receivedMinor ?? totals.totalMinor;
+  if (input.tender === "cash") {
+    if (!Number.isSafeInteger(received) || received < totals.totalMinor) return { ok: false, error: "The cash received is less than the total." };
+  } else received = totals.totalMinor;
+  const change = input.tender === "cash" ? received - totals.totalMinor : 0;
+
+  const tracked = found.map((p) => ({ productId: p._id, qty: qtyBy.get(p._id)!, tracked: counts(p) }));
+  const failed = await reserveStock(ctx, tracked);
+  if (failed) return { ok: false, error: `"${found.find((p) => p._id === failed)?.name ?? "An item"}" just ran out of stock.` };
+
+  const id = randomUUID();
+  const now = new Date();
+  const orderNo = await nextOrderNo(ctx);
+  const order: Order = {
+    _id: id, orderNo, idempotencyKey: input.idempotencyKey, trackingHash: sha(trackingTokenFor(ctx.instanceId, id)),
+    items: lines.map((l) => ({ productId: l.productId, name: l.name, unitMinor: l.unitMinor, qty: l.qty, lineMinor: l.unitMinor * l.qty })),
+    currency: settings.currency, subtotalMinor: totals.subtotalMinor, discountMinor: totals.discountMinor,
+    ...(!useManual && promo && totals.discountMinor > 0 ? { promo: { id: promo.promo._id, name: promo.promo.name } } : {}),
+    shippingMinor: 0, taxMinor: totals.taxMinor, totalMinor: totals.totalMinor,
+    customer: { name, email: "", phone: "", address: "In store", city: "In store" },
+    state: "completed", source: "pos", cashierId: actor.userId,
+    payment: { method: "pos", state: "captured", pos: { tender: input.tender, ...(input.tender === "cash" ? { receivedMinor: received, changeMinor: change } : {}) }, refundedMinor: 0, refunds: [] },
+    stockReserved: false,
+    history: [{ at: now, kind: "order", to: "completed", by: actor.userId, note: "in-store sale" }, { at: now, kind: "payment", to: "captured", by: actor.userId, note: `paid by ${input.tender}` }],
+    createdAt: now, updatedAt: now,
+  };
+  try {
+    await orders.insert(ctx, order as never);
+  } catch (e) {
+    await releaseStock(ctx, tracked.filter((t) => t.tracked));
+    if ((e as { code?: number }).code === 11000) {
+      const again = (await orders.find(ctx, { idempotencyKey: input.idempotencyKey } as never, 1))[0];
+      if (again) return { ok: true, orderId: again._id, orderNo: again.orderNo, totalMinor: again.totalMinor, changeMinor: again.payment.pos?.changeMinor ?? 0, duplicate: true };
+    }
+    return { ok: false, error: "The sale could not be saved. Please try again." };
+  }
+  await emitWebhook(ctx, "order.created", order);
+  await emitWebhook(ctx, "order.paid", order);
+  return { ok: true, orderId: id, orderNo, totalMinor: totals.totalMinor, changeMinor: change };
+}
+
 // ---------------- gateway webhook ----------------
 export type WebhookResult = { status: number; body: { ok: boolean; reason?: string; duplicate?: boolean } };
 

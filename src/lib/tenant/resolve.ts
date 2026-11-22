@@ -13,6 +13,8 @@ export type InstanceRecord = {
   status: InstanceStatus;
   planId: string;
   industryPack?: string;
+  /** shown in the public store directory when the owner opts in */
+  listed?: boolean;
   customDomains?: { host: string; verified: boolean }[];
   toggleLocks?: Record<string, boolean>;
   toggleOverrides?: Record<string, boolean>;

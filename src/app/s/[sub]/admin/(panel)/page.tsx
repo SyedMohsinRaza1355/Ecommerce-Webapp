@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/commerce/load";
 import { authorize } from "@/lib/auth/rbac";
 import { orders } from "@/lib/commerce/orders";
@@ -14,6 +15,11 @@ export default async function AdminHome({ params, searchParams }: { params: Prom
   const { sub } = await params;
   const { denied } = await searchParams;
   const { store, staff } = await requireStaff(sub);
+  // each role lands on the screen it works in: the kitchen on its board, the cashier on the till
+  if (!denied) {
+    if (staff.actor.role === "kitchen_ops") redirect(`/s/${sub}/admin/kitchen`);
+    if (staff.actor.role === "cashier") redirect(`/s/${sub}/admin/pos`);
+  }
   const ctx = store.ctx;
   const b = `/s/${sub}/admin`;
   const canReports = authorize(staff.actor, "reports.view", ctx).allow;

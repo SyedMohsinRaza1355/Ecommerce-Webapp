@@ -52,6 +52,17 @@ export const _TENANT_V3: Migration = {
 };
 TENANT_MIGRATIONS.push(_TENANT_V3);
 
+export const _TENANT_V4: Migration = {
+  version: 4,
+  name: "staff password reset and point-of-sale",
+  async up(db) {
+    await db.collection("staff_tokens").createIndex({ hash: 1 }, { unique: true });
+    await db.collection("staff_tokens").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+    await db.collection("orders").createIndex({ instanceId: 1, source: 1, createdAt: -1 }, { sparse: true });
+  },
+};
+TENANT_MIGRATIONS.push(_TENANT_V4);
+
 export const PLATFORM_MIGRATIONS: Migration[] = [
   {
     version: 1,

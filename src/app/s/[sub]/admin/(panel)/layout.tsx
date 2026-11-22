@@ -17,7 +17,9 @@ export default async function AdminLayout({ children, params }: { children: Reac
   const can = (action: Parameters<typeof authorize>[1]) => authorize(a, action, store.ctx).allow;
   const b = `/s/${sub}/admin`;
   const nav = [
-    { href: b, label: "Dashboard", icon: Icon.home, exact: true },
+    ...(a.role === "kitchen_ops" || a.role === "cashier" ? [] : [{ href: b, label: "Dashboard", icon: Icon.home, exact: true }]),
+    ...(can("pos.sell") ? [{ href: `${b}/pos`, label: "Till", icon: Icon.tag }] : []),
+    ...(can("orders.updateStatus") && (a.role === "kitchen_ops" || store.eff.get("F-124")?.enabled === true) ? [{ href: `${b}/kitchen`, label: "Kitchen", icon: Icon.list }] : []),
     ...(can("orders.updateStatus") ? [{ href: `${b}/orders`, label: "Orders", icon: Icon.cart }] : []),
     ...(can("catalog.manage") || can("inventory.view") ? [{ href: `${b}/products`, label: "Products", icon: Icon.box }, ...(can("catalog.manage") ? [{ href: `${b}/categories`, label: "Categories", icon: Icon.list }] : [])] : []),
     ...(can("catalog.manage") ? [{ href: `${b}/content`, label: "Content", icon: Icon.globe }, { href: `${b}/inbox`, label: "Inbox", icon: Icon.users }] : []),

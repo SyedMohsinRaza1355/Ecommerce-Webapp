@@ -24,7 +24,8 @@ export type ProvisionResult =
   | { ok: true; instanceId: string; inviteToken: string; inviteExpiresAt: Date }
   | { ok: false; step: string; message: string };
 
-export const INVITE_TTL_MS = 60 * 60 * 1000; // one-time setup link, 1 hour (SRS D-1)
+export const INVITE_TTL_MS = 60 * 60 * 1000; // store owner setup link, 1 hour (SRS D-1)
+export const STAFF_INVITE_TTL_MS = 24 * 60 * 60 * 1000; // staff invitations sent by an owner: 24 hours
 
 export const hashToken = (t: string) => createHash("sha256").update(t).digest("hex");
 
@@ -38,10 +39,10 @@ export type Invite = {
   createdAt: Date;
 };
 
-export async function createOwnerInvite(instanceId: string, email: string, role: Invite["role"] = "store_owner") {
+export async function createOwnerInvite(instanceId: string, email: string, role: Invite["role"] = "store_owner", ttlMs = INVITE_TTL_MS) {
   const db = await platformDb();
   const token = randomBytes(32).toString("base64url");
-  const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
+  const expiresAt = new Date(Date.now() + ttlMs);
   // invalidate earlier unused invites for this owner
   await db.collection<Invite>("invites").updateMany({ instanceId, email, usedAt: null }, { $set: { usedAt: new Date() } });
   await db.collection<Invite>("invites").insertOne({

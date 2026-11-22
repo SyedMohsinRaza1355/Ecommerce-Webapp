@@ -235,14 +235,14 @@ export async function inviteStaffAction(sub: string, _p: AdminState, form: FormD
   if (!g) return { error: "Only the store owner can manage staff." };
   const { platformDb } = await import("@/lib/db/client");
   const plan = await (await platformDb()).collection<{ _id: string; quotas: { staffSeats: number } }>("plans").findOne({ _id: g.store.instance.planId });
-  const r = await inviteStaff(g.store.ctx, g.staff.actor, fd(form, "email"), fd(form, "role"), plan?.quotas.staffSeats ?? 1);
+  const r = await inviteStaff(g.store.ctx, g.staff.actor, fd(form, "email"), fd(form, "role"), plan?.quotas.staffSeats ?? 1, g.store.settings.branding.storeName || g.store.instance.name);
   if (!r.ok) return { error: r.error };
   await record(g.store, g.staff, "staff.invite", fd(form, "email"));
   revalidatePath(`${home(sub)}/staff`);
-  return { message: `Invitation created. Share this one-time link (valid for 1 hour):`, link: `/invite/${r.token}` };
+  return { message: `Invitation sent by email. You can also share this one-time link yourself (valid for 24 hours):`, link: `/invite/${r.token}` };
 }
 
-export async function staffChangeAction(sub: string, userId: string, change: { role?: string; disabled?: boolean }): Promise<AdminState> {
+export async function staffChangeAction(sub: string, userId: string, change: { role?: string; disabled?: boolean; resetTwoFactor?: boolean }): Promise<AdminState> {
   const g = await guardSoft(sub, "staff.manage");
   if (!g) return { error: "Only the store owner can manage staff." };
   const r = await changeStaff(g.store.ctx, g.staff.actor, userId, change);
@@ -652,4 +652,60 @@ export async function uploadImageAction(sub: string, _p: AdminState, form: FormD
   if (!r.ok) return { error: r.error };
   await record(g.store, g.staff, "image.upload");
   return { link: r.url, message: "Uploaded." };
+}
+
+// ---------------- staff password reset (public: the person is signed out) ----------------
+import { requestStaffReset, completeStaffReset } from "@/lib/commerce/staff";
+
+export async function staffForgotAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const store = await loadStore(sub);
+  if (store.status !== "ok") return { error: "This store is not available." };
+  const ip = ((await headers()).get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
+  await requestStaffReset(store.ctx, fd(form, "email"), store.settings.branding.storeName || store.instance.name, ip);
+  return { message: "If that email belongs to someone on this store's team, we have sent a link to choose a new password. Check your inbox and spam folder." };
+}
+
+export async function staffResetAction(sub: string, token: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const store = await loadStore(sub);
+  if (store.status !== "ok") return { error: "This store is not available." };
+  const ip = ((await headers()).get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
+  if (!(await rateLimit(`staff-reset-use:${ip}`, 10, 60_000)).ok) return { error: "Too many attempts. Wait a minute." };
+  if (fd(form, "password") !== fd(form, "confirm")) return { error: "The two passwords do not match." };
+  const r = await completeStaffReset(store.ctx, token, fd(form, "password"));
+  if (!r.ok) return { error: r.error };
+  redirect(`${home(sub)}/login?reset=1`);
+}
+
+// ---------------- cashier till (point of sale) ----------------
+import { placeStaffOrder } from "@/lib/commerce/orders";
+
+export type PosState = undefined | { error?: string; orderId?: string; orderNo?: number; totalMinor?: number; changeMinor?: number };
+
+export async function posSaleAction(sub: string, payload: { items: { productId: string; qty: number }[]; tender: string; received: string; customerName: string; discountPercent: string; idem: string }): Promise<PosState> {
+  const g = await guardSoft(sub, "pos.sell");
+  if (!g) return { error: "You do not have permission to make sales." };
+  let receivedMinor: number | undefined;
+  if (payload.tender === "cash" && payload.received.trim() !== "") {
+    try { receivedMinor = parseMajor(payload.received.trim(), g.store.settings.currency).minor; } catch { return { error: "Enter the cash received like 1000 or 1000.50." }; }
+  }
+  const pct = payload.discountPercent.trim() === "" ? undefined : Number(payload.discountPercent);
+  const r = await placeStaffOrder(g.store.ctx, g.store.settings, g.store.feat, g.staff.actor, {
+    items: payload.items.slice(0, 100).map((i) => ({ productId: String(i.productId), qty: Number(i.qty) })),
+    tender: payload.tender as "cash", receivedMinor, customerName: String(payload.customerName ?? ""), idempotencyKey: String(payload.idem ?? ""), discountPercent: pct,
+  });
+  if (!r.ok) return { error: r.error };
+  await record(g.store, g.staff, "pos.sale", `#${r.orderNo} ${payload.tender}`);
+  revalidatePath(`${home(sub)}/orders`);
+  return { orderId: r.orderId, orderNo: r.orderNo, totalMinor: r.totalMinor, changeMinor: r.changeMinor };
+}
+
+export async function directoryAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "branding.edit");
+  if (!g) return { error: "You do not have permission to change this." };
+  const listed = form.get("listed") === "on";
+  const { platformDb } = await import("@/lib/db/client");
+  await (await platformDb()).collection("instances").updateOne({ _id: g.store.instance._id as never }, { $set: { listed } });
+  clearResolutionCache();
+  await record(g.store, g.staff, listed ? "directory.on" : "directory.off");
+  return { message: listed ? "Your store now appears on the Browse stores page." : "Your store is no longer listed." };
 }

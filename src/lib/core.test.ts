@@ -55,11 +55,11 @@ describe("RBAC matrix (SRS section 4)", () => {
 
   it("matches the documented matrix for every role and every action", () => {
     expect(allowedFor("customer")).toEqual(["orders.own", "profile.own"]);
-    expect(allowedFor("cashier")).toEqual(["orders.own", "orders.process", "orders.updateStatus", "profile.own"]);
+    expect(allowedFor("cashier")).toEqual(["orders.own", "orders.process", "orders.updateStatus", "pos.sell", "profile.own"]);
     expect(allowedFor("kitchen_ops")).toEqual(["inventory.view", "orders.own", "orders.updateStatus", "profile.own"]);
     expect(allowedFor("manager")).toEqual([
       "activity.view", "branding.edit", "catalog.manage", "inventory.view", "orders.own", "orders.process",
-      "orders.updateStatus", "profile.own", "promotions.manage", "reports.view",
+      "orders.updateStatus", "pos.sell", "profile.own", "promotions.manage", "reports.view",
     ]);
     const owner = allowedFor("store_owner");
     expect(owner).toContain("staff.manage");

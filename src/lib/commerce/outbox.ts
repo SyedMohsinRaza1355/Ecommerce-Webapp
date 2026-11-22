@@ -7,7 +7,7 @@ import { htmlEmail, sendMail } from "@/lib/email/send";
 // sends with bounded exponential backoff and a dead-letter state. The "provider" is a
 // simulated mailer that records messages so they can be inspected in the admin.
 export type EmailType = "order.placed" | "order.paid" | "order.status" | "order.cancelled" | "order.refunded" | "support.signin"
-  | "campaign" | "customer.welcome" | "customer.signin_link" | "customer.reset" | "contact.message" | "stock.low" | "newsletter.welcome" | "test.email";
+  | "staff.invite" | "staff.reset" | "campaign" | "customer.welcome" | "customer.signin_link" | "customer.reset" | "contact.message" | "stock.low" | "newsletter.welcome" | "test.email";
 
 type OutboxDoc = {
   _id: string;
@@ -48,6 +48,8 @@ export function renderEmail(type: EmailType, data: Record<string, unknown>): Ren
     case "order.cancelled": return mk(`${store}: order ${no} was cancelled`, "Order cancelled", [`Your order ${no} was cancelled. If you paid, a refund will follow.`]);
     case "support.signin": return mk(`${store}: platform support signed in to your store`, "Support access", [`A platform administrator signed in to your store for support at ${data.at}. Reason: ${data.reason}.`, "The session lasts 30 minutes and cannot change your password, email or two-step settings."]);
     case "order.refunded": return mk(`${store}: refund for order ${no}`, "Refund issued", [`A refund of ${data.amount} was issued for order ${no}.`]);
+    case "staff.invite": return mk(`${store}: you are invited to join the team`, "You are invited", [`You have been invited to work in ${store} as ${data.role}. Open the link to choose your password. It works once and expires in 24 hours.`], { label: "Set up my account", url: String(data.url) });
+    case "staff.reset": return mk(`${store}: reset your staff password`, "Reset your password", ["Use this button to choose a new password. The link works once and expires in 30 minutes. You will still need your authenticator code to sign in. If you did not ask for this, ignore this email."], { label: "Choose a new password", url: String(data.url) });
     case "campaign": return mk(String(data.subject ?? `News from ${store}`), String(data.subject ?? `News from ${store}`), [...String(data.message ?? "").split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean), `To stop getting these emails, open: ${data.unsubscribeUrl}`]);
     case "customer.welcome": return mk(`Welcome to ${store}`, `Welcome, ${data.name ?? "friend"}`, ["Your account is ready. You can follow orders and save your delivery details."], data.url ? { label: "Open my account", url: String(data.url) } : undefined);
     case "customer.signin_link": return mk(`${store}: your sign-in link`, "Sign in without a password", ["Use this button to sign in. The link works once and expires in 15 minutes."], { label: "Sign in", url: String(data.url) });

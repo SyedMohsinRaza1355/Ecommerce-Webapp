@@ -29,6 +29,7 @@ export const PERMISSIONS = {
   "staff.manage": ["super_admin", "store_owner"],
   "settings.commerce": ["super_admin", "store_owner"],
   "payments.manage": ["super_admin", "store_owner"],
+  "pos.sell": ["super_admin", "store_owner", "manager", "cashier"],
   "privacy.manage": ["super_admin", "store_owner"],
   "activity.view": ["super_admin", "store_owner", "manager"],
   "reports.view": ["super_admin", "store_owner", "manager"],

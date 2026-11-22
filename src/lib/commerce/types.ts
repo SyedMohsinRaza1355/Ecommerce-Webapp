@@ -76,15 +76,20 @@ export type Order = {
   totalMinor: number;
   customer: { name: string; email: string; phone: string; address: string; city: string; notes?: string };
   state: OrderState;
+  /** where the order came from; missing means the online shop */
+  source?: "online" | "pos";
+  cashierId?: string;
   customerId?: string;
   payment: {
-    method: "card" | "cod" | "manual";
+    method: "card" | "cod" | "manual" | "pos";
     state: PaymentState;
     /** "test" = built-in pretend gateway, "stripe" = the owner's own Stripe account */
     provider?: "test" | "stripe";
     intentRef?: string;
     attempt?: number;
     stripe?: { sessionId?: string; paymentIntent?: string };
+    /** in-store sale (cashier till): how the customer paid and the cash handed over */
+    pos?: { tender: "cash" | "card" | "wallet"; receivedMinor?: number; changeMinor?: number };
     manual?: { methodId: string; label: string; kind: string; accountTitle: string; accountNumber: string; instructions: string; reference?: string; reportedAt?: Date };
     refundedMinor: number;
     refunds: { id: string; amountMinor: number; at: Date }[];
