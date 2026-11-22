@@ -4,8 +4,11 @@ import { loadStore } from "@/lib/commerce/load";
 import { products } from "@/lib/commerce/store";
 import { ProductImage } from "@/components/store/ProductCard";
 import { AddToCart } from "@/components/store/Bits";
+import { Gallery } from "@/components/store/Gallery";
+import { availableNow, describeAvailability, hasVariantStock } from "@/lib/commerce/options";
 import { fmtMoney, t } from "@/lib/i18n";
-import { addToCartAction } from "../../actions";
+import { addToCartAction, toggleCompareAction } from "../../actions";
+import { cookies } from "next/headers";
 import { currentCustomer } from "@/lib/commerce/customers";
 import { listReviews, ratingSummary } from "@/lib/commerce/extras";
 import { ProductCard } from "@/components/store/ProductCard";
@@ -24,7 +27,7 @@ export async function generateMetadata({ params }: { params: Promise<{ sub: stri
   const { sub, slug } = await params;
   const r = await find(sub, slug);
   if (!r) return { title: "Not found" };
-  return { title: r.p.name, alternates: { canonical: `/s/${sub}/product/${slug}` }, description: r.p.description.slice(0, 150) || r.p.name, openGraph: { title: r.p.name, images: r.p.imageUrl ? [r.p.imageUrl] : [] } };
+  return { title: r.p.seoTitle || r.p.name, alternates: { canonical: `/s/${sub}/product/${slug}` }, description: r.p.description.slice(0, 150) || r.p.name, openGraph: { title: r.p.name, images: r.p.imageUrl ? [r.p.imageUrl] : [] } };
 }
 
 export default async function ProductPage({ params }: { params: Promise<{ sub: string; slug: string }> }) {
@@ -42,7 +45,13 @@ export default async function ProductPage({ params }: { params: Promise<{ sub: s
     ? (await products.find(s.ctx, { categoryId: p.categoryId, status: "published", _id: { $ne: p._id } } as never, 4))
     : [];
   const back = Boolean(s.feat.backorders && p.backorder);
-  const sold = s.feat.stockTracking && p.trackStock && p.stock <= 0 && !back;
+  const variantStocked = hasVariantStock(p);
+  const allVariantsOut = variantStocked && (p.options ?? []).filter((g) => g.kind === "variant").every((g) => g.choices.every((c) => c.stock != null && c.stock <= 0));
+  const sold = s.feat.stockTracking && !back && (variantStocked ? allVariantsOut : p.trackStock && p.stock <= 0);
+  const images = [p.imageUrl, ...(p.gallery ?? [])].filter((x): x is string => Boolean(x));
+  const notNow = !availableNow(p.availability);
+  const windowText = describeAvailability(p.availability);
+  const freeOver = s.feat.freeShipping && s.settings.freeShippingOverMinor ? s.settings.freeShippingOverMinor : null;
   const jsonLd = s.eff.get("F-140")?.enabled
     ? {
         "@context": "https://schema.org", "@type": "Product", name: p.name, description: p.description, ...(p.imageUrl ? { image: p.imageUrl } : {}),
@@ -55,7 +64,7 @@ export default async function ProductPage({ params }: { params: Promise<{ sub: s
     <article className="max-md:pb-28">
       <nav aria-label="Breadcrumb" className="mb-4 text-sm text-muted"><Link href={base} className="underline">{t(L, "home")}</Link> / <Link href={`${base}/products`} className="underline">{t(L, "shop")}</Link> / {p.name}</nav>
       <div className="grid gap-8 md:grid-cols-2">
-        <ProductImage p={p} className="reveal" />
+        <div className="reveal">{images.length > 1 ? <Gallery images={images} name={p.name} /> : <ProductImage p={p} />}</div>
         <div className="reveal reveal-1">
           <h1 className="text-3xl font-extrabold tracking-tight">{p.name}</h1>
           <p className="mt-3 flex items-baseline gap-3">
@@ -63,16 +72,27 @@ export default async function ProductPage({ params }: { params: Promise<{ sub: s
             {p.compareAtMinor ? <s className="text-muted">{fmtMoney(p.compareAtMinor, s.settings.currency, L)}</s> : null}
           </p>
           <p className="mt-2">
-            {sold ? <span className="badge badge-red">{t(L, "outOfStock")}</span> : s.feat.stockTracking && p.trackStock && p.stock <= 5 && !(back && p.stock <= 0) ? <span className="badge badge-amber">{t(L, "onlyLeft", { n: p.stock })}</span> : <span className={`badge ${back && p.stock <= 0 ? "badge-amber" : "badge-green"}`}>{back && p.stock <= 0 ? "Available on backorder: ships when restocked" : t(L, "inStock")}</span>}
+            {sold ? <span className="badge badge-red">{t(L, "outOfStock")}</span> : !variantStocked && s.feat.stockTracking && p.trackStock && p.stock <= 5 && !(back && p.stock <= 0) ? <span className="badge badge-amber">{t(L, "onlyLeft", { n: p.stock })}</span> : <span className={`badge ${back && p.stock <= 0 ? "badge-amber" : "badge-green"}`}>{back && p.stock <= 0 ? "Available on backorder: ships when restocked" : t(L, "inStock")}</span>}
           </p>
           <div className="mt-6 max-md:hidden">
-            <AddToCart action={addToCartAction.bind(null, sub, p._id)} cartHref={`${base}/cart`} price={fmtMoney(p.priceMinor, s.settings.currency, L)} label={t(L, "addToCart")} soldOut={sold} max={s.feat.stockTracking && p.trackStock && !back ? p.stock : 99} />
+            <AddToCart action={addToCartAction.bind(null, sub, p._id)} cartHref={`${base}/cart`} price={fmtMoney(p.priceMinor, s.settings.currency, L)} label={t(L, "addToCart")} soldOut={sold} max={s.feat.stockTracking && p.trackStock && !back && !variantStocked ? p.stock : 99} groups={p.options ?? []} basePriceMinor={p.priceMinor} currency={s.settings.currency} unavailableNote={notNow ? `Only available ${windowText.toLowerCase()}` : undefined} />
           </div>
           {wishOn && (
             <div className="mt-4">
               {me ? <WishlistButton action={wishlistAction.bind(null, sub, p._id)} saved={me.wishlist.includes(p._id)} /> : <Link className="btn btn-secondary" href={`${base}/account/login?next=${encodeURIComponent(`${base}/product/${slug}`)}`}>♡ Sign in to save</Link>}
             </div>
           )}
+          {s.eff.get("F-122")?.enabled === true && (
+            <form action={toggleCompareAction.bind(null, sub, p._id, `${base}/product/${slug}`)} className="mt-3 flex items-center gap-3">
+              <button className="btn btn-secondary">{((await cookies()).get(`cmp_${s.instance._id}`)?.value ?? "").split(",").includes(p._id) ? "Remove from compare" : "Compare"}</button>
+              <Link className="text-sm underline" href={`${base}/compare`}>See comparison</Link>
+            </form>
+          )}
+          {windowText && <p className="mt-3 text-sm text-muted">Orderable: {windowText}</p>}
+          <section className="mt-6 rounded-xl bg-slate-50 p-3 text-sm ring-1 ring-line" aria-label="Delivery and returns">
+            <p><strong>Delivery:</strong> {s.feat.shipping ? (s.settings.shippingFlatMinor > 0 ? `from ${fmtMoney(s.settings.shippingFlatMinor, s.settings.currency, L)}` : "free") : "arranged with the shop"}{freeOver ? `, free over ${fmtMoney(freeOver, s.settings.currency, L)}` : ""}.</p>
+            {s.settings.returnNote && <p className="mt-1"><strong>Returns:</strong> {s.settings.returnNote}</p>}
+          </section>
           {p.description && (
             <section className="mt-8" aria-labelledby="d">
               <h2 id="d" className="font-bold">{t(L, "description")}</h2>
@@ -81,7 +101,15 @@ export default async function ProductPage({ params }: { params: Promise<{ sub: s
           )}
         </div>
       </div>
-      <AddToCart bar action={addToCartAction.bind(null, sub, p._id)} cartHref={`${base}/cart`} price={fmtMoney(p.priceMinor, s.settings.currency, L)} label={t(L, "addToCart")} soldOut={sold} max={s.feat.stockTracking && p.trackStock && !back ? p.stock : 99} />
+      {(p.attributes?.length ?? 0) > 0 && (
+        <section className="mt-10" aria-labelledby="specs">
+          <h2 id="specs" className="text-xl font-extrabold">Details</h2>
+          <dl className="mt-3 max-w-xl divide-y divide-line rounded-xl ring-1 ring-line">
+            {p.attributes!.map((a) => <div key={a.name} className="flex justify-between gap-4 p-3 text-sm"><dt className="font-semibold">{a.name}</dt><dd className="text-end">{a.value}</dd></div>)}
+          </dl>
+        </section>
+      )}
+      <AddToCart bar action={addToCartAction.bind(null, sub, p._id)} cartHref={`${base}/cart`} price={fmtMoney(p.priceMinor, s.settings.currency, L)} label={t(L, "addToCart")} soldOut={sold || notNow} max={99} groups={p.options ?? []} basePriceMinor={p.priceMinor} currency={s.settings.currency} />
 
       {reviewsOn && (
         <section className="mt-12" aria-labelledby="rv">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import type { CheckoutState } from "../actions";
 import type { CheckoutMethod } from "@/lib/payments/config";
 
@@ -21,7 +21,7 @@ function fieldOf(error: string | undefined): string | null {
 }
 
 export default function CheckoutForm({
-  action, idem, labels, methods, discounts, prefill, total,
+  action, idem, labels, methods, discounts, prefill, total, fulfil,
 }: {
   action: (p: CheckoutState, f: FormData) => Promise<CheckoutState>;
   idem: string;
@@ -30,7 +30,11 @@ export default function CheckoutForm({
   discounts: boolean;
   prefill?: Record<string, string>;
   total: string;
+  fulfil?: { types: ("delivery" | "pickup" | "dine_in")[]; locations: { id: string; name: string; address: string }[]; scheduling: boolean; defaultType: "delivery" | "pickup" | "dine_in"; table?: string };
 }) {
+  const [ftype, setFtype] = useState(fulfil?.defaultType ?? "delivery");
+  const [sched, setSched] = useState("");
+  const delivery = ftype === "delivery";
   const [state, act, pending] = useActionState<CheckoutState, FormData>(action, undefined);
   const v = state?.values ?? prefill ?? {};
   const bad = fieldOf(state?.error);
@@ -54,16 +58,43 @@ export default function CheckoutForm({
   return (
     <form ref={form} action={act} className="space-y-6" noValidate>
       <input type="hidden" name="idem" value={idem} />
+      {fulfil && fulfil.types.length > 0 && (
+        <fieldset className="card">
+          <legend className="px-1 font-extrabold">How would you like it?</legend>
+          <div className="flex flex-wrap gap-2">
+            {fulfil.types.map((tp) => (
+              <label key={tp} className="flex cursor-pointer items-center gap-2 rounded-xl border border-line px-4 py-2 has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50">
+                <input type="radio" name="ftype" value={tp} checked={ftype === tp} onChange={() => setFtype(tp)} /> {tp === "delivery" ? "Delivery" : tp === "pickup" ? "Pickup" : "Eat here (table)"}
+              </label>
+            ))}
+          </div>
+          {ftype === "pickup" && fulfil.locations.length > 0 && (
+            <label className="field mt-3"><span>Pick up from</span>
+              <select className="input" name="locationId" required>{fulfil.locations.map((l) => <option key={l.id} value={l.id}>{l.name}, {l.address}</option>)}</select>
+            </label>
+          )}
+          {ftype === "dine_in" && <label className="field mt-3"><span>Table number</span><input className="input" name="table" defaultValue={fulfil.table ?? ""} maxLength={12} required /></label>}
+          {fulfil.scheduling && (
+            <label className="field mt-3"><span>Choose a time (optional)</span>
+              <input className="input" type="datetime-local" value={sched} onChange={(e) => setSched(e.target.value)} />
+              <p className="hint">Leave empty to get it as soon as possible.</p>
+              <input type="hidden" name="scheduledFor" value={sched ? new Date(sched).toISOString() : ""} />
+            </label>
+          )}
+        </fieldset>
+      )}
+
       <fieldset className="card">
         <legend className="px-1 font-extrabold">{labels.contact}</legend>
         <div className="grid gap-x-4 sm:grid-cols-2">
           {field("name", labels.fullName, { autoComplete: "name", required: true })}
           {field("email", labels.email, { type: "email", autoComplete: "email", required: true, dir: "ltr" })}
           {field("phone", labels.phone, { type: "tel", autoComplete: "tel", required: true, dir: "ltr" })}
-          {field("city", labels.city, { autoComplete: "address-level2", required: true })}
+          {delivery && field("city", labels.city, { autoComplete: "address-level2", required: true })}
         </div>
-        {field("address", labels.address, { autoComplete: "street-address", required: true })}
+        {delivery && field("address", labels.address, { autoComplete: "street-address", required: true })}
         {field("notes", labels.notes, { maxLength: 500 })}
+        <p className="hint -mt-2">We use your phone number only to reach you about this order.</p>
       </fieldset>
 
       <fieldset className="card">

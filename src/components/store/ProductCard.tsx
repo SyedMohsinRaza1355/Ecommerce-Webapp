@@ -3,6 +3,7 @@ import type { Product } from "@/lib/commerce/types";
 import { fmtMoney, t, type Locale } from "@/lib/i18n";
 import { addToCartAction } from "@/app/s/[sub]/(shop)/actions";
 import { QuickAdd } from "./QuickAdd";
+import { hasRequiredOptions } from "@/lib/commerce/options";
 
 export function ProductImage({ p, className = "" }: { p: Pick<Product, "name" | "imageUrl">; className?: string }) {
   if (p.imageUrl) {
@@ -37,7 +38,8 @@ export function ProductCard({ p, base, currency, locale, trackStock, backorders 
         </p>
         {sold ? <span className="badge badge-red">{t(locale, "outOfStock")}</span> : trackStock && p.trackStock && p.stock <= 5 && !(back && p.stock <= 0) ? <span className="badge badge-amber">{t(locale, "onlyLeft", { n: p.stock })}</span> : null}
       </div>
-      {!sold && sub && <QuickAdd action={addToCartAction.bind(null, sub, p._id)} name={p.name} cartHref={`${base}/cart`} label={t(locale, "addShort")} addedText={t(locale, "addedToCart")} />}
+      {!sold && sub && hasRequiredOptions(p) && <Link href={`${base}/product/${p.slug}`} className="quick-add !w-auto px-3 text-sm" aria-label={`Choose options for ${p.name}`}>{t(locale, "chooseOptions")}</Link>}
+      {!sold && sub && !hasRequiredOptions(p) && <QuickAdd action={addToCartAction.bind(null, sub, p._id)} name={p.name} cartHref={`${base}/cart`} label={t(locale, "addShort")} addedText={t(locale, "addedToCart")} />}
     </li>
   );
 }

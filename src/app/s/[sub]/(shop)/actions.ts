@@ -37,18 +37,26 @@ export async function addToCartAction(sub: string, productId: string, _prev: Car
     jar.set(cartCookie(s.instance._id), cartId, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 14 });
   }
   const qty = Number(form.get("qty") ?? 1);
-  const r = await setCartQty(s.ctx, cartId, productId, qty, "add");
+  const sel = [...form.entries()].filter(([k]) => k.startsWith("opt_")).map(([, v]) => String(v)).slice(0, 40);
+  const r = await setCartQty(s.ctx, cartId, productId, qty, "add", sel);
   revalidatePath(`/s/${sub}`, "layout");
   if (!r.ok) return { error: r.error };
   return { message: r.error ?? "Added to your cart." };
 }
 
-export async function updateCartAction(sub: string, productId: string, form: FormData) {
+/** A cart line is identified by product id plus chosen options, written as "productId|choice,choice". */
+function splitKey(key: string): { productId: string; sel: string[] } {
+  const [productId = "", rest = ""] = key.split("|");
+  return { productId, sel: rest ? rest.split(",").slice(0, 40) : [] };
+}
+
+export async function updateCartAction(sub: string, key: string, form: FormData) {
   const s = await okStore(sub);
   const cartId = (await cookies()).get(cartCookie(s.instance._id))?.value;
   if (!cartId) return;
   const act = String(form.get("act") ?? "set");
-  await setCartQty(s.ctx, cartId, productId, act === "remove" ? 0 : Number(form.get("qty") ?? 1), "set");
+  const { productId, sel } = splitKey(key);
+  await setCartQty(s.ctx, cartId, productId, act === "remove" ? 0 : Number(form.get("qty") ?? 1), "set", sel);
   revalidatePath(`/s/${sub}`, "layout");
 }
 
@@ -66,7 +74,7 @@ export async function placeOrderAction(sub: string, _prev: CheckoutState, form: 
   const items = await getCartItems(s.ctx, cartId);
   const me = s.eff.get("F-045")?.enabled ? await currentCustomer(s) : null;
   const r = await placeOrder(s.ctx, s.settings, s.feat, s.settings.branding.storeName || s.instance.name, {
-    items, method: values.method, customerId: me?._id, idempotencyKey: String(form.get("idem") ?? ""), discountCode: values.discountCode || undefined,
+    items, method: values.method, customerId: me?._id, fulfilment: { type: (["pickup", "dine_in"].includes(String(form.get("ftype"))) ? String(form.get("ftype")) : "delivery") as "delivery", locationId: String(form.get("locationId") ?? "") || undefined, table: String(form.get("table") ?? "") || undefined, scheduledFor: String(form.get("scheduledFor") ?? "") || undefined }, idempotencyKey: String(form.get("idem") ?? ""), discountCode: values.discountCode || undefined,
     customer: { name: values.name, email: values.email, phone: values.phone, address: values.address, city: values.city, notes: values.notes },
   });
   if (!r.ok) return { error: r.error, values, field: r.code };
@@ -150,11 +158,12 @@ export async function trackAction(sub: string, _p: AcctState, form: FormData): P
   redirect(`/s/${sub}/order/${token}`);
 }
 
-export async function setQtyAction(sub: string, productId: string, qty: number): Promise<void> {
+export async function setQtyAction(sub: string, key: string, qty: number): Promise<void> {
+  const { productId, sel } = splitKey(key);
   const s = await okStore(sub);
   const cartId = (await cookies()).get(cartCookie(s.instance._id))?.value;
   if (!cartId || !Number.isInteger(qty)) return;
-  await setCartQty(s.ctx, cartId, productId, qty, "set");
+  await setCartQty(s.ctx, cartId, productId, qty, "set", sel);
   revalidatePath(`/s/${sub}`, "layout");
 }
 
@@ -173,7 +182,19 @@ export async function reorderAction(sub: string, orderId: string) {
     cartId = newCartId();
     jar.set(cartCookie(s.instance._id), cartId, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 14 });
   }
-  for (const i of o.items) await setCartQty(s.ctx, cartId, i.productId, i.qty, "add");
+  for (const i of o.items) await setCartQty(s.ctx, cartId, i.productId, i.qty, "add", i.sel ?? []);
   revalidatePath(`/s/${sub}`, "layout");
   redirect(`/s/${sub}/cart`);
+}
+
+// ---------------- compare products (F-122) ----------------
+export async function toggleCompareAction(sub: string, productId: string, back: string) {
+  const s = await okStore(sub);
+  if (s.eff.get("F-122")?.enabled !== true) return;
+  const jar = await cookies();
+  const name = `cmp_${s.instance._id}`;
+  const cur = (jar.get(name)?.value ?? "").split(",").filter((x) => /^[A-Za-z0-9-]{8,60}$/.test(x));
+  const next = cur.includes(productId) ? cur.filter((x) => x !== productId) : [...cur, productId].slice(-4);
+  jar.set(name, next.join(","), { path: "/", maxAge: 60 * 60 * 24 * 7, sameSite: "lax" });
+  redirect(back.startsWith(`/s/${sub}/`) ? back : `/s/${sub}/compare`);
 }

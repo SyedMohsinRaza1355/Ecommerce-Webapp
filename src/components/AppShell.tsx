@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Logo } from "./Logo";
 import { NavLink } from "./NavLink";
 import { MobileMenu } from "./MobileMenu";
+import { CommandPalette } from "./CommandPalette";
 
 export type NavItem = { href: string; label: string; icon?: ReactNode; exact?: boolean };
 
@@ -34,6 +35,7 @@ export function AppShell({
       </aside>
       <div className="min-w-0 flex-1">
         <header className="glass sticky top-0 z-10 flex items-center justify-end gap-3 border-b border-line px-4 py-3">
+          <CommandPalette nav={nav} />
           <span className="text-sm text-muted">{userLabel}</span>
           <form action={logout}><button className="btn btn-secondary">Sign out</button></form>
         </header>

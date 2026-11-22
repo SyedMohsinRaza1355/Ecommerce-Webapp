@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { AdminState } from "@/app/s/[sub]/admin/actions";
 
-export type Ticket = { id: string; orderNo: number; createdAt: string; state: "confirmed" | "processing" | "ready"; items: { name: string; qty: number }[]; notes: string; who: string; paid: string; source: string };
+export type Ticket = { id: string; orderNo: number; createdAt: string; state: "confirmed" | "processing" | "ready"; items: { name: string; qty: number }[]; notes: string; who: string; paid: string; source: string; extra?: string };
 
 const COLUMNS: { state: Ticket["state"]; title: string; next: string; nextLabel: string }[] = [
   { state: "confirmed", title: "New", next: "processing", nextLabel: "Start preparing" },
@@ -81,6 +81,7 @@ export default function KitchenBoard({ tickets, move, sub, canMove }: { tickets:
                         <p className={`rounded-lg px-2 py-1 font-mono text-lg font-bold ${a.level === "late" ? "bg-red-100 text-red-800" : a.level === "warn" ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-900"}`} aria-label={`Waiting ${a.text} minutes`}>{a.text}</p>
                       </div>
                       <p className="text-xs text-muted">{t.who} · {t.source} · {t.paid}</p>
+                      {t.extra && <p className="mt-1 inline-block rounded-lg bg-indigo-100 px-2 py-0.5 text-sm font-bold text-indigo-900">{t.extra}</p>}
                       <ul className="mt-2 space-y-1 text-lg">{t.items.map((i, k) => <li key={k}><strong>{i.qty} x</strong> {i.name}</li>)}</ul>
                       {t.notes && <p className="mt-2 rounded-lg bg-amber-50 p-2 text-sm">Note: {t.notes}</p>}
                       <div className="mt-3 flex flex-wrap gap-2">

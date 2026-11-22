@@ -59,15 +59,16 @@ export default async function CartPage({ params }: { params: Promise<{ sub: stri
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_22rem]">
         <ul className="space-y-3">
           {v.lines.map((l) => (
-            <li key={l.product._id} className="card flex gap-4">
+            <li key={l.key} className="card flex gap-4">
               <div className="w-24 shrink-0"><ProductImage p={l.product} /></div>
               <div className="min-w-0 grow">
                 <Link href={`${base}/product/${l.product.slug}`} className="font-bold hover:underline">{l.product.name}</Link>
-                <p className="text-sm text-muted">{money(l.product.priceMinor)}</p>
-                {l.problem && <p role="alert" className="err">{l.problem === "lowstock" ? `Only ${l.product.stock} left. Lower the quantity.` : "No longer available. Remove it to continue."}</p>}
+                {l.label && <p className="text-sm">{l.label}</p>}
+                <p className="text-sm text-muted">{money(l.unitMinor)}</p>
+                {l.problem && <p role="alert" className="err">{l.problem === "lowstock" ? "Not enough left. Lower the quantity." : l.problem === "notnow" ? "Not available at this time of day. Remove it or come back later." : "No longer available. Remove it to continue."}</p>}
                 <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <QtyStepper qty={l.qty} name={l.product.name} removeLabel={t(L, "remove")} max={s.feat.stockTracking && l.product.trackStock && !(s.feat.backorders && l.product.backorder) ? l.product.stock : 99} update={setQtyAction.bind(null, sub, l.product._id)} />
-                  <form action={updateCartAction.bind(null, sub, l.product._id)}>
+                  <QtyStepper qty={l.qty} name={l.product.name} removeLabel={t(L, "remove")} max={s.feat.stockTracking && l.product.trackStock && !(s.feat.backorders && l.product.backorder) && !l.sel.length ? l.product.stock : 99} update={setQtyAction.bind(null, sub, l.key)} />
+                  <form action={updateCartAction.bind(null, sub, l.key)}>
                     <input type="hidden" name="act" value="remove" />
                     <button className="text-sm underline">{t(L, "remove")}</button>
                   </form>

@@ -16,6 +16,7 @@ export default async function KitchenPage({ params }: { params: Promise<{ sub: s
     items: o.items.map((i) => ({ name: i.name, qty: i.qty })), notes: o.customer.notes ?? "",
     who: o.customer.name, source: o.source === "pos" ? "In store" : o.customer.city === "In store" ? "In store" : "Online",
     paid: o.payment.state === "captured" ? "Paid" : o.payment.method === "cod" ? "Pay on delivery" : "Unpaid",
+    extra: o.fulfilment ? [o.fulfilment.type === "dine_in" ? `Table ${o.fulfilment.table}` : o.fulfilment.type === "pickup" ? `Pickup${o.fulfilment.locationName ? `: ${o.fulfilment.locationName}` : ""}` : "", o.fulfilment.scheduledFor ? `Scheduled ${o.fulfilment.scheduledFor.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: process.env.APP_TIMEZONE || "Asia/Karachi" })}` : ""].filter(Boolean).join(" · ") : "",
   }));
   return (
     <div>

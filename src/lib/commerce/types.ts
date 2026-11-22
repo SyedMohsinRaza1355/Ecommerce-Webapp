@@ -12,6 +12,18 @@ export type Settings = {
   freeShippingOverMinor: number | null;
   contactEmail: string;
   announcement?: string;
+  /** old address -> new address (F-090) */
+  redirects?: { from: string; to: string }[];
+  /** bumped to invalidate the live spreadsheet links (F-104) */
+  feedVersion?: number;
+  /** which ways of getting an order are offered (F-017, F-034, F-016) */
+  fulfilment?: { delivery?: boolean; pickup?: boolean; dineIn?: boolean };
+  /** pickup points (F-072) */
+  locations?: { id: string; name: string; address: string }[];
+  /** pause new same-time orders when this many are being prepared (F-125) */
+  maxActive?: number;
+  /** shown on every product page (returns and refunds in one or two sentences) */
+  returnNote?: string;
   /** weekly opening hours (F-018); a missing day means "closed" only when at least one day is set */
   hours?: Partial<Record<Day, { open: string; close: string } | null>>;
   /** delivery fee by city (F-071) */
@@ -36,7 +48,7 @@ export const DEFAULT_SETTINGS: Omit<Settings, "instanceId" | "branding"> & { bra
   contactEmail: "",
 };
 
-export type Category = { _id: string; instanceId?: string; name: string; slug: string; sortOrder?: number };
+export type Category = { _id: string; instanceId?: string; name: string; slug: string; sortOrder?: number; availability?: import("./options").Availability };
 
 export type Product = {
   _id: string;
@@ -50,6 +62,19 @@ export type Product = {
   imageUrl?: string;
   /** can be ordered even when stock is 0 (F-022) */
   backorder?: boolean;
+  sku?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  /** size/colour variants with their own stock, and add-on groups (F-002, F-003, F-014, F-021) */
+  options?: import("./options").OptionGroup[];
+  /** extra pictures (F-006) */
+  gallery?: string[];
+  /** specification table (F-008) */
+  attributes?: { name: string; value: string }[];
+  /** a combo made of other products (F-004) */
+  bundle?: { productId: string; qty: number }[];
+  /** only orderable in this window (F-012) */
+  availability?: import("./options").Availability;
   stock: number;
   trackStock: boolean;
   status: "draft" | "published";
@@ -57,7 +82,7 @@ export type Product = {
   updatedAt: Date;
 };
 
-export type OrderItem = { productId: string; name: string; unitMinor: number; qty: number; lineMinor: number };
+export type OrderItem = { productId: string; name: string; unitMinor: number; qty: number; lineMinor: number; /** chosen option ids */ sel?: string[]; /** bundle parts to put back in stock on cancel */ parts?: { productId: string; qty: number }[] };
 
 export type Order = {
   _id: string;
@@ -79,6 +104,8 @@ export type Order = {
   /** where the order came from; missing means the online shop */
   source?: "online" | "pos";
   cashierId?: string;
+  /** how the customer gets the order (missing means delivery) */
+  fulfilment?: { type: "delivery" | "pickup" | "dine_in"; locationId?: string; locationName?: string; table?: string; scheduledFor?: Date };
   customerId?: string;
   payment: {
     method: "card" | "cod" | "manual" | "pos";

@@ -18,10 +18,13 @@ export default async function AdminLayout({ children, params }: { children: Reac
   const b = `/s/${sub}/admin`;
   const nav = [
     ...(a.role === "kitchen_ops" || a.role === "cashier" ? [] : [{ href: b, label: "Dashboard", icon: Icon.home, exact: true }]),
+    ...(can("branding.edit") ? [{ href: `${b}/start`, label: "Setup guide", icon: Icon.rocket }] : []),
+    ...(can("settings.commerce") ? [{ href: `${b}/links`, label: "Links and feeds", icon: Icon.rocket }] : []),
     ...(can("pos.sell") ? [{ href: `${b}/pos`, label: "Till", icon: Icon.tag }] : []),
     ...(can("orders.updateStatus") && (a.role === "kitchen_ops" || store.eff.get("F-124")?.enabled === true) ? [{ href: `${b}/kitchen`, label: "Kitchen", icon: Icon.list }] : []),
     ...(can("orders.updateStatus") ? [{ href: `${b}/orders`, label: "Orders", icon: Icon.cart }] : []),
     ...(can("catalog.manage") || can("inventory.view") ? [{ href: `${b}/products`, label: "Products", icon: Icon.box }, ...(can("catalog.manage") ? [{ href: `${b}/categories`, label: "Categories", icon: Icon.list }] : [])] : []),
+    ...(can("branding.edit") && store.eff.get("F-016")?.enabled === true ? [{ href: `${b}/qr`, label: "Table QR", icon: Icon.list }] : []),
     ...(can("catalog.manage") ? [{ href: `${b}/content`, label: "Content", icon: Icon.globe }, { href: `${b}/inbox`, label: "Inbox", icon: Icon.users }] : []),
     ...(can("reports.view") ? [{ href: `${b}/reports`, label: "Reports", icon: Icon.list }] : []),
     ...(can("promotions.manage") ? [{ href: `${b}/discounts`, label: "Discounts", icon: Icon.tag }, { href: `${b}/promotions`, label: "Promotions", icon: Icon.tag }] : []),

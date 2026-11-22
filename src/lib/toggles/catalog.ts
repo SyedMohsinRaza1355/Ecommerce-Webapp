@@ -105,7 +105,7 @@ export const TOGGLES: ToggleDef[] = [
   t("F-069", "Order tracking page", "shipping", ON, "F-030"),
   t("F-070", "Packing slips and shipping labels", "shipping", ON, "F-029"),
   t("F-071", "Shipping zones", "shipping", OFF, "F-063"),
-  t("F-072", "Store pickup locations", "shipping", OFF, "F-023"),
+  t("F-072", "Store pickup locations", "shipping", OFF, "F-017"),
   t("F-136", "Map pin-drop and geofenced polygon delivery zones", "shipping", OFF, "F-067"),
   // 3.9 Content, UX and branding
   t("F-073", "Logo upload", "content", ON),

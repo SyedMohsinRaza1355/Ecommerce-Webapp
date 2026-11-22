@@ -59,7 +59,7 @@ export async function logoutAction(sub: string) {
 function productFields(form: FormData) {
   return ProductInput.safeParse({
     name: fd(form, "name"), description: fd(form, "description"), price: fd(form, "price"), compareAt: fd(form, "compareAt"),
-    categoryId: fd(form, "categoryId"), imageUrl: fd(form, "imageUrl"), stock: fd(form, "stock") || "0", trackStock: form.get("trackStock") === "on", backorder: form.get("backorder") === "on", status: fd(form, "status") || "draft",
+    categoryId: fd(form, "categoryId"), imageUrl: fd(form, "imageUrl"), stock: fd(form, "stock") || "0", trackStock: form.get("trackStock") === "on", backorder: form.get("backorder") === "on", sku: fd(form, "sku"), seoTitle: fd(form, "seoTitle"), seoDescription: fd(form, "seoDescription"), optionsText: fd(form, "optionsText"), galleryText: fd(form, "galleryText"), attributesText: fd(form, "attributesText"), bundleText: fd(form, "bundleText"), availDays: fd(form, "availDays"), availFrom: fd(form, "availFrom"), availTo: fd(form, "availTo"), status: fd(form, "status") || "draft",
   });
 }
 
@@ -708,4 +708,46 @@ export async function directoryAction(sub: string, _p: AdminState, form: FormDat
   clearResolutionCache();
   await record(g.store, g.staff, listed ? "directory.on" : "directory.off");
   return { message: listed ? "Your store now appears on the Browse stores page." : "Your store is no longer listed." };
+}
+
+// ---------------- how orders are received: delivery, pickup, tables, schedule, busy limit ----------------
+export async function fulfilmentAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "settings.commerce");
+  if (!g) return { error: "Only the store owner can change this." };
+  const delivery = form.get("delivery") === "on", pickup = form.get("pickup") === "on", dineIn = form.get("dineIn") === "on", schedule = form.get("schedule") === "on";
+  if (!delivery && !pickup && !dineIn) return { error: "Keep at least one way of receiving orders switched on." };
+  const locations: { id: string; name: string; address: string }[] = [];
+  for (const line of fd(form, "locations").split("\n").map((l) => l.trim()).filter(Boolean)) {
+    const [name = "", address = ""] = line.split("|").map((x) => x.trim());
+    if (!name || name.length > 40 || address.length > 120) return { error: `Line "${line.slice(0, 40)}": write it as  Name | Address  (name up to 40 characters).` };
+    locations.push({ id: randomUUID().slice(0, 8), name, address });
+  }
+  if (locations.length > 20) return { error: "At most 20 pickup points." };
+  const maxRaw = fd(form, "maxActive").trim();
+  const maxActive = maxRaw === "" ? 0 : parseInt(maxRaw, 10);
+  if (!Number.isInteger(maxActive) || maxActive < 0 || maxActive > 500) return { error: "The busy limit must be a whole number from 1 to 500, or empty for no limit." };
+  await saveSetting(g, sub, { fulfilment: { delivery, pickup, dineIn }, locations, maxActive }, "fulfilment");
+  const wanted = ["F-017", ...(pickup ? ["F-034"] : []), ...(dineIn ? ["F-016"] : []), ...(schedule ? ["F-012", "F-035"] : []), ...(maxActive ? ["F-018", "F-125"] : [])];
+  const problems: string[] = [];
+  for (const id of wanted) { const r = await setOwnerFeature(g.store.instance, g.staff.actor, id, true, true); if (!r.ok) problems.push(r.error); }
+  if (!schedule) await setOwnerFeature(g.store.instance, g.staff.actor, "F-035", false, true).catch(() => undefined);
+  return problems.length ? { message: "Saved, but some parts could not be switched on:", error: problems[0] } : { message: "Saved. Customers see the new choices at checkout." };
+}
+
+export async function linksAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "settings.commerce");
+  if (!g) return { error: "Only the store owner can change this." };
+  const redirects: { from: string; to: string }[] = [];
+  for (const line of fd(form, "redirects").split("\n").map((l) => l.trim()).filter(Boolean)) {
+    const [from = "", to = ""] = line.split(">").map((x) => x.trim());
+    if (!from.startsWith("/") || from.length > 120 || !(to.startsWith("/") || /^https:\/\//.test(to)) || to.length > 300 || /[\s<>"]/.test(from + to)) return { error: `Line "${line.slice(0, 50)}": write it as  /old-address > /new-address  (or a full https:// address).` };
+    redirects.push({ from, to });
+  }
+  if (redirects.length > 200) return { error: "At most 200 redirects." };
+  const patch: Record<string, unknown> = { redirects };
+  if (form.get("rotate") === "on") patch.feedVersion = ((g.store.settings.feedVersion ?? 1) + 1);
+  await saveSetting(g, sub, patch, "links");
+  const problems: string[] = [];
+  for (const id of ["F-106", "F-104", ...(redirects.length ? ["F-090"] : [])]) { const r = await setOwnerFeature(g.store.instance, g.staff.actor, id, true, true); if (!r.ok) problems.push(r.error); }
+  return problems.length ? { message: "Saved, but some parts could not be switched on:", error: problems[0] } : { message: "Saved." };
 }

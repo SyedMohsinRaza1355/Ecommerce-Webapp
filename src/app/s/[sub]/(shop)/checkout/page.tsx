@@ -27,6 +27,11 @@ export default async function CheckoutPage({ params }: { params: Promise<{ sub: 
   const canPay = methods.length > 0;
   const me = s.eff.get("F-045")?.enabled ? await currentCustomer(s) : null;
   const defAddr = me?.addresses?.[0];
+  const table = (await cookies()).get(`tbl_${s.instance._id}`)?.value;
+  const ful = s.settings.fulfilment ?? {};
+  const types = (s.feat.orderTypes
+    ? ([ful.delivery !== false ? "delivery" : null, s.feat.pickup && ful.pickup ? "pickup" : null, s.feat.tableQr && ful.dineIn ? "dine_in" : null].filter(Boolean) as ("delivery" | "pickup" | "dine_in")[])
+    : []);
 
   return (
     <div className="max-md:pb-24">
@@ -42,6 +47,7 @@ export default async function CheckoutPage({ params }: { params: Promise<{ sub: 
             prefill={me ? { name: me.name, email: me.email, phone: me.phone ?? defAddr?.phone ?? "", address: defAddr?.address ?? "", city: defAddr?.city ?? "" } : undefined}
             discounts={s.feat.discounts}
             total={money(v.totals.totalMinor)}
+            fulfil={types.length > 1 || s.feat.scheduled ? { types: types.length ? types : ["delivery"], locations: s.settings.locations ?? [], scheduling: Boolean(s.feat.scheduled), defaultType: table && types.includes("dine_in") ? "dine_in" : types[0] ?? "delivery", table } : undefined}
             labels={{ contact: t(L, "contact"), fullName: t(L, "fullName"), email: t(L, "email"), phone: t(L, "phone"), address: t(L, "address"), city: t(L, "city"), notes: t(L, "notes"), payment: t(L, "payment"), discountCode: t(L, "discountCode"), placeOrder: t(L, "placeOrder") }}
           />
           <aside className="card h-fit" aria-label="Order summary">

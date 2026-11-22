@@ -9,6 +9,7 @@ import { Icon } from "@/components/Icons";
 import { CookieNotice } from "@/components/store/Bits";
 import { RegisterSW } from "@/components/store/RegisterSW";
 import { ToastHost } from "@/components/store/Toast";
+import { SearchBox } from "@/components/store/SearchBox";
 import { setLocaleAction, newsletterAction } from "./actions";
 import { listPages } from "@/lib/commerce/extras";
 import { hasHours, isOpenNow } from "@/lib/commerce/rules";
@@ -48,11 +49,7 @@ export default async function ShopLayout({ children, params }: { children: React
             )}
             <span className="truncate">{name}</span>
           </Link>
-          <form action={`${base}/products`} method="get" role="search" className="order-last flex min-w-0 grow basis-full gap-2 sm:order-none sm:basis-auto sm:max-w-sm" >
-            <label className="sr-only" htmlFor="q">{t(L, "search")}</label>
-            <input id="q" name="q" className="input" placeholder={t(L, "searchPlaceholder")} maxLength={60} />
-            <button className="btn btn-secondary" aria-label={t(L, "search")}>{Icon.search ?? t(L, "search")}<span className="max-sm:sr-only">{t(L, "search")}</span></button>
-          </form>
+          <SearchBox action={`${base}/products`} suggestUrl={`${base}/suggest`} label={t(L, "search")} placeholder={t(L, "searchPlaceholder")} button={<>{Icon.search}<span className="max-sm:sr-only">{t(L, "search")}</span></>} />
           <nav className="ms-auto flex items-center gap-2" aria-label="Main">
             <Link href={`${base}/products`} className="btn btn-secondary hidden sm:inline-flex">{t(L, "shop")}</Link>
             {bilingual && (

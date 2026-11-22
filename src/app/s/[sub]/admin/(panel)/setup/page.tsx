@@ -3,7 +3,7 @@ import { authorize } from "@/lib/auth/rbac";
 import { AF } from "@/components/admin/Forms";
 import { DAYS } from "@/lib/commerce/types";
 import { formatMajor, money } from "@/lib/money/money";
-import { hoursAction, zonesAction, lookAction } from "@/app/s/[sub]/admin/actions";
+import { hoursAction, zonesAction, lookAction, fulfilmentAction } from "@/app/s/[sub]/admin/actions";
 
 export const metadata = { title: "Store setup" };
 
@@ -55,6 +55,22 @@ export default async function SetupPage({ params }: { params: Promise<{ sub: str
             </AF>
           </>
         ) : <p className="mt-2 text-sm text-muted">Only the store owner can change delivery fees.</p>}
+      </section>
+
+      <section className="card" aria-labelledby="fu">
+        <h2 id="fu" className="text-lg font-extrabold">How customers get their order</h2>
+        {owner ? (
+          <AF action={fulfilmentAction.bind(null, sub)} submit="Save ordering options" className="mt-3">
+            <div className="space-y-1 text-sm">
+              <label className="flex items-center gap-2"><input type="checkbox" name="delivery" defaultChecked={s.fulfilment?.delivery !== false} /> Delivery to the customer&apos;s address</label>
+              <label className="flex items-center gap-2"><input type="checkbox" name="pickup" defaultChecked={Boolean(s.fulfilment?.pickup)} /> Pickup (no delivery fee)</label>
+              <label className="flex items-center gap-2"><input type="checkbox" name="dineIn" defaultChecked={Boolean(s.fulfilment?.dineIn)} /> Eat here: order to a table by scanning a QR code (<a className="underline" href={`/s/${sub}/admin/qr`}>print QR codes</a>)</label>
+              <label className="flex items-center gap-2"><input type="checkbox" name="schedule" defaultChecked={store.eff.get("F-035")?.enabled === true} /> Let customers choose a time (up to 7 days ahead)</label>
+            </div>
+            <label className="field mt-3"><span>Pickup points (one per line: Name | Address)</span><textarea className="input min-h-20" name="locations" defaultValue={(s.locations ?? []).map((l) => `${l.name} | ${l.address}`).join(String.fromCharCode(10))} /></label>
+            <label className="field"><span>Busy limit (optional)</span><input className="input w-32" name="maxActive" inputMode="numeric" dir="ltr" defaultValue={s.maxActive ? String(s.maxActive) : ""} /><p className="hint">When this many orders are being prepared, new same-time orders wait a little; customers can still schedule for later.</p></label>
+          </AF>
+        ) : <p className="mt-2 text-sm text-muted">Only the store owner can change this.</p>}
       </section>
 
       <section className="card" aria-labelledby="lk">

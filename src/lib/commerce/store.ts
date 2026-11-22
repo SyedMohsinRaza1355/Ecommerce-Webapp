@@ -7,7 +7,8 @@ import { isHex } from "@/lib/color";
 import { slugify } from "@/lib/slug";
 import { CURRENCY_EXPONENT, parseMajor } from "@/lib/money/money";
 import { IMAGE_PATH_RE } from "./images";
-import { DEFAULT_SETTINGS, type Category, type Product, type Settings } from "./types";
+import { DEFAULT_SETTINGS, type Category, type Day, type Product, type Settings } from "./types";
+import { parseOptions, parseAttributes, parseBundle, validateAvailability, hasWindow } from "./options";
 
 export const products = new TenantRepo<Product>("products");
 export const categories = new TenantRepo<Category>("categories");
@@ -90,10 +91,39 @@ export const ProductInput = z.object({
   stock: z.coerce.number().int("Stock must be a whole number").min(0).max(1_000_000),
   trackStock: z.boolean().default(true),
   backorder: z.boolean().default(false),
+  sku: z.string().trim().max(40).default(""),
+  seoTitle: z.string().trim().max(70).default(""),
+  seoDescription: z.string().trim().max(160).default(""),
+  optionsText: z.string().max(4000).default(""),
+  galleryText: z.string().max(3000).default(""),
+  attributesText: z.string().max(3000).default(""),
+  bundleText: z.string().max(1000).default(""),
+  availDays: z.string().max(40).default(""),
+  availFrom: z.string().max(5).default(""),
+  availTo: z.string().max(5).default(""),
   status: z.enum(["draft", "published"]),
 });
 
 export type ProductForm = z.infer<typeof ProductInput>;
+
+/** Turns the extra product fields (options, gallery, details, bundle, hours) into stored values, or says what is wrong. */
+export function extrasFrom(input: ProductForm, currency: string): { ok: true; set: Record<string, unknown> } | { ok: false; error: string } {
+  const exp = CURRENCY_EXPONENT[currency] ?? 2;
+  const opts = parseOptions(input.optionsText, exp);
+  if (!opts.ok) return opts;
+  const attrs = parseAttributes(input.attributesText);
+  if (!attrs.ok) return attrs;
+  const bundle = parseBundle(input.bundleText);
+  if (!bundle.ok) return bundle;
+  const gallery = input.galleryText.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (gallery.length > 8) return { ok: false, error: "At most 8 extra pictures." };
+  for (const g of gallery) if (!/^https:\/\/[^\s"'<>]+$/i.test(g) && !IMAGE_PATH_RE.test(g)) return { ok: false, error: "Extra pictures must be https links or uploaded pictures, one per line." };
+  const days = input.availDays.split(",").map((d) => d.trim().toLowerCase()).filter(Boolean) as Day[];
+  const availability = { ...(days.length ? { days } : {}), ...(input.availFrom ? { from: input.availFrom } : {}), ...(input.availTo ? { to: input.availTo } : {}) };
+  const bad = validateAvailability(availability);
+  if (bad) return { ok: false, error: bad };
+  return { ok: true, set: { sku: input.sku, seoTitle: input.seoTitle, seoDescription: input.seoDescription, options: opts.groups, gallery, attributes: attrs.attrs, bundle: bundle.parts, availability: hasWindow(availability) ? availability : null } };
+}
 
 async function uniqueSlug(ctx: TenantContext, base: string, exceptId?: string): Promise<string> {
   let slug = base, n = 1;
@@ -115,9 +145,12 @@ export async function createProduct(ctx: TenantContext, input: ProductForm, curr
   if (priceMinor < 0) return { ok: false, error: "Price cannot be negative" };
   if (compare !== null && compare <= priceMinor) return { ok: false, error: "The compare-at price must be higher than the price" };
   if (input.categoryId && !(await categories.findById(ctx, input.categoryId))) return { ok: false, error: "Choose a valid category" };
+  const ex = extrasFrom(input, currency);
+  if (!ex.ok) return ex;
   const now = new Date();
   const id = randomUUID();
   await products.insert(ctx, {
+    ...ex.set,
     _id: id, name: input.name, slug: await uniqueSlug(ctx, slugify(input.name)), description: input.description,
     priceMinor, compareAtMinor: compare, categoryId: input.categoryId || null, imageUrl: input.imageUrl,
     stock: input.stock, trackStock: input.trackStock, backorder: input.backorder, status: input.status, createdAt: now, updatedAt: now,
@@ -138,7 +171,10 @@ export async function updateProduct(ctx: TenantContext, id: string, input: Produ
   if (priceMinor < 0) return { ok: false, error: "Price cannot be negative" };
   if (compare !== null && compare <= priceMinor) return { ok: false, error: "The compare-at price must be higher than the price" };
   if (input.categoryId && !(await categories.findById(ctx, input.categoryId))) return { ok: false, error: "Choose a valid category" };
+  const ex = extrasFrom(input, currency);
+  if (!ex.ok) return ex;
   await products.updateById(ctx, id, {
+    ...ex.set,
     name: input.name, description: input.description, priceMinor, compareAtMinor: compare, categoryId: input.categoryId || null,
     imageUrl: input.imageUrl, stock: input.stock, trackStock: input.trackStock, backorder: input.backorder, status: input.status, updatedAt: new Date(),
     slug: cur.name === input.name ? cur.slug : await uniqueSlug(ctx, slugify(input.name), id),

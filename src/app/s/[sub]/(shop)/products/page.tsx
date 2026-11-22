@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadStore } from "@/lib/commerce/load";
-import { categories, listPublished } from "@/lib/commerce/store";
+import { categories, listPublished, products } from "@/lib/commerce/store";
 import { ProductCard } from "@/components/store/ProductCard";
 import { t } from "@/lib/i18n";
+import { rankProducts } from "@/lib/commerce/search";
 
 export const metadata = { title: "Shop" };
 
@@ -20,6 +21,8 @@ export default async function ProductsPage({ params, searchParams }: { params: P
   const sort = (["new", "price_asc", "price_desc", "name"] as const).find((x) => x === sp.sort) ?? "new";
   const [cats, res] = await Promise.all([categories.find(s.ctx, {}, 50), listPublished(s.ctx, { q, categoryId: cat || undefined, page, pageSize: 24, sort })]);
   const pages = Math.max(Math.ceil(res.total / res.pageSize), 1);
+  const names = res.total === 0 && q ? await (await products.collection(s.ctx)).find(products.scope(s.ctx, { status: "published" } as never)).project({ name: 1, slug: 1 }).limit(500).toArray() : [];
+  const didYouMean = rankProducts(names.map((r) => ({ name: String(r.name), slug: String(r.slug) })), q, 3);
   const href = (p: number, c = cat) => `${base}/products?${new URLSearchParams({ ...(q ? { q } : {}), ...(c ? { cat: c } : {}), ...(sort !== "new" ? { sort } : {}), ...(p > 1 ? { page: String(p) } : {}) })}`;
 
   return (
@@ -48,6 +51,7 @@ export default async function ProductsPage({ params, searchParams }: { params: P
         <div className="card pop-in mt-6 text-center">
           <h2 className="text-lg font-bold">{t(L, "noProducts")}</h2>
           <p className="text-muted">{t(L, "noProductsHint")}</p>
+          {didYouMean.length > 0 && <p className="mt-2 text-sm">Did you mean: {didYouMean.map((h, i) => <span key={h.slug}>{i > 0 && ", "}<Link className="font-semibold underline" href={`${base}/products?q=${encodeURIComponent(h.name)}`}>{h.name}</Link></span>)}?</p>}
           <Link href={`${base}/products`} className="btn btn-secondary mt-4">{t(L, "all")}</Link>
         </div>
       ) : (

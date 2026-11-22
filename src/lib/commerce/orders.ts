@@ -10,6 +10,7 @@ import { signBody, verifySignature, type GatewayEvent } from "./gateway";
 import { enqueueEmail, processOutbox } from "./outbox";
 import { formatMajor, money } from "@/lib/money/money";
 import { notifyLowStock } from "./extras";
+import { prepareLines, reserveLines, releaseLines, releaseOrderItems } from "./lines";
 import { emitWebhook } from "./integrations";
 import { bestPromo, hasHours, isOpenNow, describeHours, listPromos, zoneFor } from "./rules";
 import { getPaymentConfig, getStripeKey, getStripeWebhookSecret } from "@/lib/payments/config";
@@ -40,16 +41,17 @@ export async function trackUrlFor(ctx: TenantContext, token: string): Promise<st
   return `${await storeUrlFor(ctx)}/order/${token}`;
 }
 
-export type Features = { shipping: boolean; freeShipping: boolean; tax: boolean; discounts: boolean; cod: boolean; card: boolean; emails: boolean; stockTracking: boolean; manualBank?: boolean; wallet?: boolean; lowStock?: boolean; maintenance?: boolean; autoPromos?: boolean; flashSales?: boolean; couponLimits?: boolean; backorders?: boolean; hours?: boolean; zones?: boolean };
+export type Features = { shipping: boolean; freeShipping: boolean; tax: boolean; discounts: boolean; cod: boolean; card: boolean; emails: boolean; stockTracking: boolean; manualBank?: boolean; wallet?: boolean; orderTypes?: boolean; pickup?: boolean; tableQr?: boolean; scheduled?: boolean; throttle?: boolean; lowStock?: boolean; maintenance?: boolean; autoPromos?: boolean; flashSales?: boolean; couponLimits?: boolean; backorders?: boolean; hours?: boolean; zones?: boolean };
 
 export type PlaceInput = {
-  items: { productId: string; qty: number }[];
+  items: { productId: string; qty: number; sel?: string[] }[];
   customer: Order["customer"];
   /** "card", "cod" or "manual:<methodId>" */
   method: string;
   idempotencyKey: string;
   discountCode?: string;
   customerId?: string;
+  fulfilment?: { type: "delivery" | "pickup" | "dine_in"; locationId?: string; table?: string; scheduledFor?: string };
   /** lets tests pretend it is another time of day */
   now?: Date;
 };
@@ -61,12 +63,12 @@ export type PlaceResult =
 const PHONE_RE = /^[0-9+()\-\s]{7,20}$/;
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-export function validateCustomer(c: Order["customer"]): string | null {
+export function validateCustomer(c: Order["customer"], needsAddress = true): string | null {
   if (c.name.trim().length < 2 || c.name.length > 100) return "Enter your full name.";
   if (!EMAIL_RE.test(c.email) || c.email.length > 120) return "Enter a valid email address.";
   if (!PHONE_RE.test(c.phone)) return "Enter a valid phone number.";
-  if (c.address.trim().length < 5 || c.address.length > 300) return "Enter your delivery address.";
-  if (c.city.trim().length < 2 || c.city.length > 80) return "Enter your city.";
+  if (needsAddress && (c.address.trim().length < 5 || c.address.length > 300)) return "Enter your delivery address.";
+  if (needsAddress && (c.city.trim().length < 2 || c.city.length > 80)) return "Enter your city.";
   if ((c.notes ?? "").length > 500) return "Notes can be at most 500 characters.";
   return null;
 }
@@ -79,32 +81,6 @@ async function nextOrderNo(ctx: TenantContext): Promise<number> {
   return 1000 + (r?.seq ?? 1);
 }
 
-async function releaseStock(ctx: TenantContext, items: { productId: string; qty: number }[]) {
-  const db = await tenantDb(ctx);
-  for (const it of items) {
-    await db.collection<Product>("products").updateOne({ _id: it.productId, instanceId: ctx.instanceId, trackStock: true }, { $inc: { stock: it.qty } });
-  }
-}
-
-/** Atomically reserve stock for every line; roll back everything if any line fails. */
-async function reserveStock(ctx: TenantContext, lines: { productId: string; qty: number; tracked: boolean }[]): Promise<string | null> {
-  const db = await tenantDb(ctx);
-  const done: { productId: string; qty: number }[] = [];
-  for (const l of lines) {
-    if (!l.tracked) continue;
-    const r = await db.collection<Product>("products").updateOne(
-      { _id: l.productId, instanceId: ctx.instanceId, status: "published", stock: { $gte: l.qty } },
-      { $inc: { stock: -l.qty } },
-    );
-    if (r.matchedCount !== 1) {
-      await releaseStock(ctx, done);
-      return l.productId;
-    }
-    done.push({ productId: l.productId, qty: l.qty });
-  }
-  return null;
-}
-
 export async function placeOrder(ctx: TenantContext, settings: Settings, feat: Features, storeName: string, input: PlaceInput): Promise<PlaceResult> {
   const existing = (await orders.find(ctx, { idempotencyKey: input.idempotencyKey } as never, 1))[0];
   if (existing) {
@@ -113,7 +89,35 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(input.idempotencyKey)) return { ok: false, error: "Invalid request. Please reload the page.", code: "validation" };
   if (feat.maintenance) return { ok: false, error: "The store is temporarily closed for maintenance. Please try again soon.", code: "validation" };
   if (feat.hours && hasHours(settings.hours) && !isOpenNow(settings.hours, input.now)) return { ok: false, error: `We are closed right now and cannot take orders. Opening hours: ${describeHours(settings.hours)}.`, code: "validation" };
-  const bad = validateCustomer(input.customer);
+  // how the order reaches the customer (F-017, F-034, F-016), when (F-035) and whether the kitchen is too busy (F-125)
+  const ft = input.fulfilment?.type ?? "delivery";
+  let fulfilment: Order["fulfilment"] | undefined;
+  if (ft !== "delivery") {
+    if (!feat.orderTypes) return { ok: false, error: "That way of getting your order is not available.", code: "validation" };
+    if (ft === "pickup" && !feat.pickup) return { ok: false, error: "Pickup is not available.", code: "validation" };
+    if (ft === "dine_in" && !(feat.tableQr && settings.fulfilment?.dineIn)) return { ok: false, error: "Ordering to a table is not available.", code: "validation" };
+    if (ft === "pickup" && !settings.fulfilment?.pickup) return { ok: false, error: "Pickup is not available.", code: "validation" };
+    const loc = settings.locations?.find((l) => l.id === input.fulfilment?.locationId);
+    if (ft === "pickup" && settings.locations?.length && !loc) return { ok: false, error: "Choose where you will pick it up.", code: "validation" };
+    const table = (input.fulfilment?.table ?? "").trim();
+    if (ft === "dine_in" && !/^[A-Za-z0-9 -]{1,12}$/.test(table)) return { ok: false, error: "Enter your table number.", code: "validation" };
+    fulfilment = { type: ft, ...(loc ? { locationId: loc.id, locationName: loc.name } : {}), ...(ft === "dine_in" ? { table } : {}) };
+  } else if (settings.fulfilment?.delivery === false) {
+    return { ok: false, error: "Delivery is not available. Choose pickup.", code: "validation" };
+  }
+  const when = input.now ?? new Date();
+  if (input.fulfilment?.scheduledFor) {
+    if (!feat.scheduled) return { ok: false, error: "Scheduling an order is not available.", code: "validation" };
+    const at = new Date(input.fulfilment.scheduledFor);
+    if (Number.isNaN(+at) || at.getTime() < when.getTime() + 20 * 60_000) return { ok: false, error: "Choose a time at least 20 minutes from now.", code: "validation" };
+    if (at.getTime() > when.getTime() + 7 * 86_400_000) return { ok: false, error: "You can schedule up to 7 days ahead.", code: "validation" };
+    if (hasHours(settings.hours) && !isOpenNow(settings.hours, at)) return { ok: false, error: `We are closed at that time. Opening hours: ${describeHours(settings.hours)}.`, code: "validation" };
+    fulfilment = { ...(fulfilment ?? { type: ft }), scheduledFor: at } as Order["fulfilment"];
+  } else if (feat.throttle && settings.maxActive) {
+    const busy = await orders.count(ctx, { state: { $in: ["confirmed", "processing"] }, "fulfilment.scheduledFor": { $exists: false } } as never);
+    if (busy >= settings.maxActive) return { ok: false, error: "We are very busy right now and cannot take more orders for the moment. Please try again in a little while, or schedule your order for later.", code: "validation" };
+  }
+  const bad = validateCustomer(input.customer, ft === "delivery");
   if (bad) return { ok: false, error: bad, code: "validation" };
   const cfg = await getPaymentConfig(ctx);
   let provider: "test" | "stripe" | undefined;
@@ -133,21 +137,10 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
   }
   if (!input.items.length) return { ok: false, error: "Your cart is empty.", code: "empty" };
 
-  // merge duplicate lines, validate quantities
-  const qtyBy = new Map<string, number>();
-  for (const i of input.items) {
-    if (!Number.isInteger(i.qty) || i.qty < 1 || i.qty > 99) return { ok: false, error: "Quantities must be between 1 and 99.", code: "validation" };
-    qtyBy.set(i.productId, (qtyBy.get(i.productId) ?? 0) + i.qty);
-  }
-  const col = await (await tenantDb(ctx)).collection<Product>("products");
-  const found = await col.find({ instanceId: ctx.instanceId, _id: { $in: [...qtyBy.keys()] }, status: "published" }).toArray();
-  if (found.length !== qtyBy.size) return { ok: false, error: "Some items in your cart are no longer available.", code: "stock" };
-
-  const lines: Line[] = found.map((p) => ({ productId: p._id, name: p.name, unitMinor: p.priceMinor, qty: qtyBy.get(p._id)! }));
-  const counts = (p: Product) => feat.stockTracking && p.trackStock && !(feat.backorders && p.backorder);
-  for (const p of found) {
-    if (counts(p) && p.stock < qtyBy.get(p._id)!) return { ok: false, error: `Only ${p.stock} of "${p.name}" left.`, code: "stock" };
-  }
+  for (const i of input.items) if (!Number.isInteger(i.qty) || i.qty < 1 || i.qty > 99) return { ok: false, error: "Quantities must be between 1 and 99.", code: "validation" };
+  const prep = await prepareLines(ctx, input.items, { stockTracking: feat.stockTracking, backorders: feat.backorders, timeWindows: true }, input.now ?? new Date());
+  if (!prep.ok) return { ok: false, error: prep.error, code: "stock" };
+  const lines: Line[] = prep.lines.map((l) => ({ productId: l.productId, name: l.name, unitMinor: l.unitMinor, qty: l.qty }));
 
   // discount code (F-053)
   let discountBps = 0;
@@ -171,26 +164,23 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
   // automatic promotion (F-054, F-056): used only when it beats the code; the code is then not consumed
   const subtotalNow = lines.reduce((n, l) => n + l.unitMinor * l.qty, 0);
   const promo = feat.autoPromos || feat.flashSales
-    ? bestPromo(await listPromos(ctx), found.map((p) => ({ productId: p._id, categoryId: p.categoryId ?? null, lineMinor: p.priceMinor * qtyBy.get(p._id)! })), input.now ?? new Date(), { auto: !!feat.autoPromos, flash: !!feat.flashSales })
+    ? bestPromo(await listPromos(ctx), prep.lines.map((l) => ({ productId: l.productId, categoryId: l.categoryId, lineMinor: l.unitMinor * l.qty })), input.now ?? new Date(), { auto: !!feat.autoPromos, flash: !!feat.flashSales })
     : null;
   let fixedDiscount = 0;
   if (promo && promo.discountMinor > Math.round((subtotalNow * discountBps) / 10000)) { fixedDiscount = promo.discountMinor; discountBps = 0; code = undefined; }
-  const zone = feat.zones ? zoneFor(settings.zones, input.customer.city) : null;
+  const zone = feat.zones && ft === "delivery" ? zoneFor(settings.zones, input.customer.city) : null;
 
   const totals = computeTotals(lines, {
     currency: settings.currency, taxBps: settings.taxBps, taxEnabled: feat.tax,
-    shippingFlatMinor: feat.shipping ? (zone ? zone.feeMinor : settings.shippingFlatMinor) : 0,
+    shippingFlatMinor: feat.shipping && ft === "delivery" ? (zone ? zone.feeMinor : settings.shippingFlatMinor) : 0,
     freeShippingOverMinor: feat.freeShipping ? settings.freeShippingOverMinor : null, discountBps, fixedDiscountMinor: fixedDiscount,
   });
 
-  const tracked = found.map((p) => ({ productId: p._id, qty: qtyBy.get(p._id)!, tracked: counts(p) }));
-  const failed = await reserveStock(ctx, tracked);
-  if (failed) {
-    const name = found.find((p) => p._id === failed)?.name ?? "an item";
-    return { ok: false, error: `Sorry, "${name}" just sold out or has too little stock.`, code: "stock" };
-  }
+  const reserve = prep.lines.flatMap((l) => l.reserve);
+  const failed = await reserveLines(ctx, reserve);
+  if (failed) return { ok: false, error: `Sorry, "${failed}" just sold out or has too little stock.`, code: "stock" };
 
-  if (feat.lowStock && feat.emails) await notifyLowStock(ctx, tracked.filter((t) => t.tracked), settings.contactEmail || null, storeName).catch(() => undefined);
+  if (feat.lowStock && feat.emails) await notifyLowStock(ctx, reserve.filter((r) => r.mode === "product"), settings.contactEmail || null, storeName).catch(() => undefined);
 
   // consume the discount atomically (usage limit is race-safe)
   if (code) {
@@ -199,7 +189,7 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
       { $inc: { used: 1 } },
     );
     if (r.matchedCount !== 1) {
-      await releaseStock(ctx, tracked.filter((t) => t.tracked));
+      await releaseLines(ctx, reserve);
       return { ok: false, error: "That discount code has just been used up.", code: "discount" };
     }
   }
@@ -210,14 +200,15 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
   const orderNo = await nextOrderNo(ctx);
   const order: Order = {
     _id: id, orderNo, idempotencyKey: input.idempotencyKey, trackingHash: sha(trackingTokenFor(ctx.instanceId, id)),
-    items: lines.map((l) => ({ productId: l.productId, name: l.name, unitMinor: l.unitMinor, qty: l.qty, lineMinor: l.unitMinor * l.qty })),
+    items: prep.lines.map((l) => ({ productId: l.productId, name: l.name, unitMinor: l.unitMinor, qty: l.qty, lineMinor: l.unitMinor * l.qty, ...(l.sel.length ? { sel: l.sel } : {}), ...(l.parts ? { parts: l.parts } : {}) })),
     currency: settings.currency, subtotalMinor: totals.subtotalMinor, discountMinor: totals.discountMinor, ...(code ? { discountCode: code } : {}), ...(fixedDiscount && promo ? { promo: { id: promo.promo._id, name: promo.promo.name } } : {}),
     shippingMinor: totals.shippingMinor, taxMinor: totals.taxMinor, totalMinor: totals.totalMinor,
-    customer: { ...input.customer, name: input.customer.name.trim(), email: input.customer.email.trim().toLowerCase() },
+    customer: { ...input.customer, name: input.customer.name.trim(), email: input.customer.email.trim().toLowerCase(), ...(ft !== "delivery" ? { address: input.customer.address || (fulfilment?.type === "dine_in" ? `Table ${fulfilment.table}` : "Pickup"), city: input.customer.city || "-" } : {}) },
     state: cod ? "confirmed" : "pending",
     ...(input.customerId ? { customerId: input.customerId } : {}),
+    ...(fulfilment ? { fulfilment } : {}),
     payment: { method: manual ? "manual" : cod ? "cod" : "card", state: cod ? "cod_due" : "requires_payment", ...(provider ? { provider } : {}), ...(manual ? { manual } : {}), refundedMinor: 0, refunds: [] },
-    stockReserved: tracked.some((t) => t.tracked),
+    stockReserved: reserve.length > 0,
     history: [{ at: now, kind: "order", to: cod ? "confirmed" : "pending", by: "customer" }],
     createdAt: now, updatedAt: now,
   };
@@ -225,7 +216,7 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
   try {
     await orders.insert(ctx, order as never);
   } catch (e) {
-    await releaseStock(ctx, tracked.filter((t) => t.tracked));
+    await releaseLines(ctx, reserve);
     if ((e as { code?: number }).code === 11000) {
       const again = (await orders.find(ctx, { idempotencyKey: input.idempotencyKey } as never, 1))[0];
       if (again) return { ok: true, orderId: again._id, orderNo: again.orderNo, trackingToken: trackingTokenFor(ctx.instanceId, again._id), needsPayment: again.payment.state === "requires_payment", duplicate: true };
@@ -252,7 +243,7 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
 
 // ---------------- in-store sale (cashier till) ----------------
 export type PosInput = {
-  items: { productId: string; qty: number }[];
+  items: { productId: string; qty: number; sel?: string[] }[];
   tender: "cash" | "card" | "wallet";
   receivedMinor?: number;
   customerName?: string;
@@ -273,23 +264,16 @@ export async function placeStaffOrder(ctx: TenantContext, settings: Settings, fe
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(input.idempotencyKey)) return { ok: false, error: "Invalid request. Reload the page." };
   if (!["cash", "card", "wallet"].includes(input.tender)) return { ok: false, error: "Choose how the customer paid." };
   if (!input.items.length) return { ok: false, error: "Add something to the sale first." };
-  const qtyBy = new Map<string, number>();
-  for (const i of input.items) {
-    if (!Number.isInteger(i.qty) || i.qty < 1 || i.qty > 99) return { ok: false, error: "Quantities must be between 1 and 99." };
-    qtyBy.set(i.productId, (qtyBy.get(i.productId) ?? 0) + i.qty);
-  }
+  for (const i of input.items) if (!Number.isInteger(i.qty) || i.qty < 1 || i.qty > 99) return { ok: false, error: "Quantities must be between 1 and 99." };
   if (input.discountPercent !== undefined && (!Number.isFinite(input.discountPercent) || input.discountPercent < 0 || input.discountPercent > 100)) return { ok: false, error: "A discount must be between 0 and 100 percent." };
   if (input.discountPercent && !["store_owner", "manager", "super_admin"].includes(actor.role)) return { ok: false, error: "Only a manager or the owner can give a discount at the till." };
   const name = (input.customerName ?? "").trim().slice(0, 100) || "Walk-in customer";
 
-  const found = await (await tenantDb(ctx)).collection<Product>("products").find({ instanceId: ctx.instanceId, _id: { $in: [...qtyBy.keys()] }, status: "published" }).toArray();
-  if (found.length !== qtyBy.size) return { ok: false, error: "Some items are no longer available. Refresh the till." };
-  const counts = (p: Product) => feat.stockTracking && p.trackStock && !(feat.backorders && p.backorder);
-  for (const p of found) if (counts(p) && p.stock < qtyBy.get(p._id)!) return { ok: false, error: `Only ${p.stock} of "${p.name}" left.` };
-
-  const lines: Line[] = found.map((p) => ({ productId: p._id, name: p.name, unitMinor: p.priceMinor, qty: qtyBy.get(p._id)! }));
+  const prep = await prepareLines(ctx, input.items, { stockTracking: feat.stockTracking, backorders: feat.backorders, timeWindows: true });
+  if (!prep.ok) return { ok: false, error: prep.error };
+  const lines: Line[] = prep.lines.map((l) => ({ productId: l.productId, name: l.name, unitMinor: l.unitMinor, qty: l.qty }));
   const promo = feat.autoPromos || feat.flashSales
-    ? bestPromo(await listPromos(ctx), found.map((p) => ({ productId: p._id, categoryId: p.categoryId ?? null, lineMinor: p.priceMinor * qtyBy.get(p._id)! })), new Date(), { auto: !!feat.autoPromos, flash: !!feat.flashSales })
+    ? bestPromo(await listPromos(ctx), prep.lines.map((l) => ({ productId: l.productId, categoryId: l.categoryId, lineMinor: l.unitMinor * l.qty })), new Date(), { auto: !!feat.autoPromos, flash: !!feat.flashSales })
     : null;
   const subtotal = lines.reduce((n, l) => n + l.unitMinor * l.qty, 0);
   const manualBps = Math.round((input.discountPercent ?? 0) * 100);
@@ -304,16 +288,16 @@ export async function placeStaffOrder(ctx: TenantContext, settings: Settings, fe
   } else received = totals.totalMinor;
   const change = input.tender === "cash" ? received - totals.totalMinor : 0;
 
-  const tracked = found.map((p) => ({ productId: p._id, qty: qtyBy.get(p._id)!, tracked: counts(p) }));
-  const failed = await reserveStock(ctx, tracked);
-  if (failed) return { ok: false, error: `"${found.find((p) => p._id === failed)?.name ?? "An item"}" just ran out of stock.` };
+  const reserve = prep.lines.flatMap((l) => l.reserve);
+  const failed = await reserveLines(ctx, reserve);
+  if (failed) return { ok: false, error: `"${failed}" just ran out of stock.` };
 
   const id = randomUUID();
   const now = new Date();
   const orderNo = await nextOrderNo(ctx);
   const order: Order = {
     _id: id, orderNo, idempotencyKey: input.idempotencyKey, trackingHash: sha(trackingTokenFor(ctx.instanceId, id)),
-    items: lines.map((l) => ({ productId: l.productId, name: l.name, unitMinor: l.unitMinor, qty: l.qty, lineMinor: l.unitMinor * l.qty })),
+    items: prep.lines.map((l) => ({ productId: l.productId, name: l.name, unitMinor: l.unitMinor, qty: l.qty, lineMinor: l.unitMinor * l.qty, ...(l.sel.length ? { sel: l.sel } : {}), ...(l.parts ? { parts: l.parts } : {}) })),
     currency: settings.currency, subtotalMinor: totals.subtotalMinor, discountMinor: totals.discountMinor,
     ...(!useManual && promo && totals.discountMinor > 0 ? { promo: { id: promo.promo._id, name: promo.promo.name } } : {}),
     shippingMinor: 0, taxMinor: totals.taxMinor, totalMinor: totals.totalMinor,
@@ -327,7 +311,7 @@ export async function placeStaffOrder(ctx: TenantContext, settings: Settings, fe
   try {
     await orders.insert(ctx, order as never);
   } catch (e) {
-    await releaseStock(ctx, tracked.filter((t) => t.tracked));
+    await releaseLines(ctx, reserve);
     if ((e as { code?: number }).code === 11000) {
       const again = (await orders.find(ctx, { idempotencyKey: input.idempotencyKey } as never, 1))[0];
       if (again) return { ok: true, orderId: again._id, orderNo: again.orderNo, totalMinor: again.totalMinor, changeMinor: again.payment.pos?.changeMinor ?? 0, duplicate: true };
@@ -450,7 +434,7 @@ export async function transitionOrder(ctx: TenantContext, orderId: string, to: O
   if (to === "cancelled") {
     // release stock exactly once, even if two staff cancel at the same time
     const flipped = await col.findOneAndUpdate({ _id: orderId, instanceId: ctx.instanceId, stockReserved: true } as never, { $set: { stockReserved: false } } as never);
-    if (flipped) await releaseStock(ctx, order.items.map((i) => ({ productId: i.productId, qty: i.qty })));
+    if (flipped) await releaseOrderItems(ctx, order.items);
     if (notify.emails) await enqueueEmail(ctx, "order.cancelled", order.customer.email, { orderNo: order.orderNo, storeName: notify.storeName });
   } else if (notify.emails && to !== "confirmed") {
     await enqueueEmail(ctx, "order.status", order.customer.email, { orderNo: order.orderNo, storeName: notify.storeName, status: to, trackUrl: await trackUrlFor(ctx, trackingTokenFor(ctx.instanceId, orderId)) });
@@ -522,7 +506,7 @@ export async function expireUnpaidOrders(ctx: TenantContext, olderThanMs = 30 * 
     );
     if (r.matchedCount !== 1) continue;
     const flipped = await col.findOneAndUpdate({ _id: o._id, instanceId: ctx.instanceId, stockReserved: true } as never, { $set: { stockReserved: false } } as never);
-    if (flipped) await releaseStock(ctx, o.items.map((i: { productId: string; qty: number }) => ({ productId: i.productId, qty: i.qty })));
+    if (flipped) await releaseOrderItems(ctx, o.items);
     n++;
   }
   return n;

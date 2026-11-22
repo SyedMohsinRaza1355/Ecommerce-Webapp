@@ -2,7 +2,7 @@ import { AF } from "./Forms";
 import ImageUploader from "./ImageUploader";
 import type { AdminState } from "@/app/s/[sub]/admin/actions";
 
-type P = { name?: string; description?: string; price?: string; compareAt?: string; categoryId?: string; imageUrl?: string; stock?: number; trackStock?: boolean; backorder?: boolean; status?: string };
+type P = { name?: string; description?: string; price?: string; compareAt?: string; categoryId?: string; imageUrl?: string; stock?: number; trackStock?: boolean; backorder?: boolean; status?: string; sku?: string; seoTitle?: string; seoDescription?: string; optionsText?: string; galleryText?: string; attributesText?: string; bundleText?: string; availDays?: string; availFrom?: string; availTo?: string };
 
 export function ProductForm({ action, upload, categories, initial = {}, submit }: { action: (p: AdminState, f: FormData) => Promise<AdminState>; upload: (p: AdminState, f: FormData) => Promise<AdminState>; categories: { id: string; name: string }[]; initial?: P; submit: string }) {
   return (
@@ -24,6 +24,26 @@ export function ProductForm({ action, upload, categories, initial = {}, submit }
       </div>
       <label className="mb-4 flex items-center gap-2 text-sm"><input type="checkbox" name="trackStock" defaultChecked={initial.trackStock ?? true} /> Track stock for this product</label>
       <label className="mb-4 flex items-center gap-2 text-sm"><input type="checkbox" name="backorder" defaultChecked={initial.backorder ?? false} /> Allow orders when out of stock (backorder). Needs &quot;Backorders&quot; turned on in Features.</label>
+      <details className="mb-4 rounded-xl p-3 ring-1 ring-line" open={Boolean(initial.optionsText || initial.galleryText || initial.attributesText || initial.bundleText || initial.availDays || initial.sku)}>
+        <summary className="cursor-pointer font-bold">More: sizes and extras, pictures, details, combos, hours</summary>
+        <label className="field mt-3"><span>Product code (SKU, optional)</span><input className="input" name="sku" defaultValue={initial.sku} maxLength={40} dir="ltr" /><p className="hint">Used for barcode scanning when receiving stock.</p></label>
+        <label className="field"><span>Search engine title (optional, up to 70 characters)</span><input className="input" name="seoTitle" defaultValue={initial.seoTitle} maxLength={70} /></label>
+        <label className="field"><span>Search engine description (optional, up to 160)</span><input className="input" name="seoDescription" defaultValue={initial.seoDescription} maxLength={160} /></label>
+        <label className="field"><span>Sizes, colours and extras</span>
+          <textarea className="input min-h-24 font-mono text-sm" name="optionsText" defaultValue={initial.optionsText} dir="ltr" placeholder={"variant Size! : Small stock 10; Large +50 stock 3\nmodifier Extras* max 2 : Cheese +30; Bacon +60"} />
+          <p className="hint">One group per line. <code>variant</code> = the shopper must pick one (each can have its own stock). <code>modifier</code> = extras. Add <code>!</code> after the name if required, <code>*</code> to allow several. <code>+50</code> adds to the price.</p>
+        </label>
+        <label className="field"><span>Extra pictures (one link per line)</span><textarea className="input min-h-20" name="galleryText" defaultValue={initial.galleryText} dir="ltr" placeholder="https://..." /></label>
+        <label className="field"><span>Details (one per line, like Material: Cotton)</span><textarea className="input min-h-20" name="attributesText" defaultValue={initial.attributesText} /></label>
+        <label className="field"><span>Combo parts (makes this a bundle)</span><textarea className="input min-h-16 font-mono text-sm" name="bundleText" defaultValue={initial.bundleText} dir="ltr" placeholder="1 x product-id-of-burger" /><p className="hint">Each line: how many, then the product id from the product&apos;s edit address. Stock is taken from the parts.</p></label>
+        <fieldset className="mb-2"><legend className="text-sm font-semibold">Only orderable at certain times (optional)</legend>
+          <div className="mt-1 grid gap-x-4 sm:grid-cols-3">
+            <label className="field"><span>Days (mon,tue,...)</span><input className="input" name="availDays" defaultValue={initial.availDays} dir="ltr" placeholder="mon,tue,wed,thu,fri" /></label>
+            <label className="field"><span>From</span><input className="input" type="time" name="availFrom" defaultValue={initial.availFrom} /></label>
+            <label className="field"><span>To</span><input className="input" type="time" name="availTo" defaultValue={initial.availTo} /></label>
+          </div>
+        </fieldset>
+      </details>
     </AF>
   );
 }
