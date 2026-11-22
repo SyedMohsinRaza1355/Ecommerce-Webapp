@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Logo } from "./Logo";
 import { NavLink } from "./NavLink";
+import { MobileMenu } from "./MobileMenu";
 
 export type NavItem = { href: string; label: string; icon?: ReactNode; exact?: boolean };
 
@@ -24,7 +25,8 @@ export function AppShell({
           <Logo light />
           <p className="mt-0 rounded-full bg-white/10 px-2.5 py-0.5 text-xs text-slate-300 md:mt-3 md:inline-block">{brand ? `${brand} · ${title}` : title}</p>
         </div>
-        <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:block md:space-y-1 md:pb-0" aria-label="Main">
+        <MobileMenu nav={nav} />
+        <nav className="hidden md:block md:space-y-1" aria-label="Main">
           {nav.map((n) => (
             <NavLink key={n.href} href={n.href} exact={n.exact} icon={n.icon}>{n.label}</NavLink>
           ))}

@@ -292,3 +292,23 @@ export async function unsubscribe(ctx: TenantContext, email: string, token: stri
   await (await db(ctx)).collection("newsletter").deleteOne({ instanceId: ctx.instanceId, email: email.toLowerCase() });
   return true;
 }
+
+// ---------------- dashboard chart ----------------
+export type DayTotal = { day: string; totalMinor: number; orders: number };
+
+/** Sales per day for the last `days` days (store timezone), with empty days filled in as zero. */
+export async function salesByDay(ctx: TenantContext, days = 7, now = new Date(), tz = process.env.APP_TIMEZONE || "Asia/Karachi"): Promise<DayTotal[]> {
+  const from = new Date(now.getTime() - (days + 1) * 86_400_000);
+  const rows = await (await db(ctx)).collection("orders").aggregate<{ _id: string; totalMinor: number; orders: number }>([
+    { $match: { instanceId: ctx.instanceId, createdAt: { $gte: from }, ...live } },
+    { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt", timezone: tz } }, totalMinor: { $sum: { $subtract: ["$totalMinor", { $ifNull: ["$payment.refundedMinor", 0] }] } }, orders: { $sum: 1 } } },
+  ]).toArray();
+  const by = new Map(rows.map((r) => [r._id, r]));
+  const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" });
+  const out: DayTotal[] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const day = fmt.format(new Date(now.getTime() - i * 86_400_000));
+    out.push({ day, totalMinor: by.get(day)?.totalMinor ?? 0, orders: by.get(day)?.orders ?? 0 });
+  }
+  return out;
+}

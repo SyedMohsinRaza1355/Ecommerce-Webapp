@@ -52,7 +52,7 @@ export default async function ProductPage({ params }: { params: Promise<{ sub: s
     : null;
 
   return (
-    <article>
+    <article className="max-md:pb-28">
       <nav aria-label="Breadcrumb" className="mb-4 text-sm text-muted"><Link href={base} className="underline">{t(L, "home")}</Link> / <Link href={`${base}/products`} className="underline">{t(L, "shop")}</Link> / {p.name}</nav>
       <div className="grid gap-8 md:grid-cols-2">
         <ProductImage p={p} className="reveal" />
@@ -65,8 +65,8 @@ export default async function ProductPage({ params }: { params: Promise<{ sub: s
           <p className="mt-2">
             {sold ? <span className="badge badge-red">{t(L, "outOfStock")}</span> : s.feat.stockTracking && p.trackStock && p.stock <= 5 && !(back && p.stock <= 0) ? <span className="badge badge-amber">{t(L, "onlyLeft", { n: p.stock })}</span> : <span className={`badge ${back && p.stock <= 0 ? "badge-amber" : "badge-green"}`}>{back && p.stock <= 0 ? "Available on backorder: ships when restocked" : t(L, "inStock")}</span>}
           </p>
-          <div className="mt-6">
-            <AddToCart action={addToCartAction.bind(null, sub, p._id)} label={t(L, "addToCart")} soldOut={sold} max={s.feat.stockTracking && p.trackStock && !back ? p.stock : 99} />
+          <div className="mt-6 max-md:hidden">
+            <AddToCart action={addToCartAction.bind(null, sub, p._id)} cartHref={`${base}/cart`} price={fmtMoney(p.priceMinor, s.settings.currency, L)} label={t(L, "addToCart")} soldOut={sold} max={s.feat.stockTracking && p.trackStock && !back ? p.stock : 99} />
           </div>
           {wishOn && (
             <div className="mt-4">
@@ -81,6 +81,8 @@ export default async function ProductPage({ params }: { params: Promise<{ sub: s
           )}
         </div>
       </div>
+      <AddToCart bar action={addToCartAction.bind(null, sub, p._id)} cartHref={`${base}/cart`} price={fmtMoney(p.priceMinor, s.settings.currency, L)} label={t(L, "addToCart")} soldOut={sold} max={s.feat.stockTracking && p.trackStock && !back ? p.stock : 99} />
+
       {reviewsOn && (
         <section className="mt-12" aria-labelledby="rv">
           <h2 id="rv" className="text-xl font-extrabold">Reviews {summary.count > 0 && <span className="text-base font-semibold text-muted">★ {summary.average} ({summary.count})</span>}</h2>

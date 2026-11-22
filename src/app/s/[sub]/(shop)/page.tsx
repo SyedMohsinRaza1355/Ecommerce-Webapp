@@ -33,6 +33,15 @@ export default async function StoreHome({ params }: { params: Promise<{ sub: str
         </section>
       )}
 
+      <ul className="trust-strip" aria-label="Why shop here">
+        {([["truck", "trust1", "trust1d"], ["lock", "trust2", "trust2d"], ["shield", "trust3", "trust3d"]] as const).map(([ic, k, d]) => (
+          <li key={k} className="card flex items-start gap-3 p-4">
+            <span className="icon-chip !h-10 !w-10 shrink-0">{Icon[ic]}</span>
+            <span><span className="block font-bold">{t(L, k)}</span><span className="text-sm text-muted">{t(L, d)}</span></span>
+          </li>
+        ))}
+      </ul>
+
       {cats.length > 0 && (
         <section aria-labelledby="cats-h" className="mb-10">
           <h2 id="cats-h" className="text-2xl font-extrabold">{t(L, "categories")}</h2>
@@ -40,7 +49,7 @@ export default async function StoreHome({ params }: { params: Promise<{ sub: str
             {cats.map((c, i) => (
               <li key={c._id}>
                 <Link href={`${base}/products?cat=${c._id}`} className={`card hover-lift reveal reveal-${(i % 6) + 1} block text-center`}>
-                  <span className="icon-chip mx-auto">{Icon.box}</span>
+                  <span className="ph mx-auto !aspect-square !w-14 text-2xl" aria-hidden="true">{c.name.slice(0, 2).replace(/^./, (x) => x.toUpperCase())}</span>
                   <span className="mt-3 block font-semibold">{c.name}</span>
                 </Link>
               </li>

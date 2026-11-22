@@ -29,7 +29,7 @@ export default async function CheckoutPage({ params }: { params: Promise<{ sub: 
   const defAddr = me?.addresses?.[0];
 
   return (
-    <div>
+    <div className="max-md:pb-24">
       <h1 className="text-3xl font-extrabold tracking-tight">{t(L, "checkout")}</h1>
       {!canPay ? (
         <div className="card mt-6 text-center"><p>Ordering is not available right now. Please contact the store.</p></div>
@@ -41,6 +41,7 @@ export default async function CheckoutPage({ params }: { params: Promise<{ sub: 
             methods={methods}
             prefill={me ? { name: me.name, email: me.email, phone: me.phone ?? defAddr?.phone ?? "", address: defAddr?.address ?? "", city: defAddr?.city ?? "" } : undefined}
             discounts={s.feat.discounts}
+            total={money(v.totals.totalMinor)}
             labels={{ contact: t(L, "contact"), fullName: t(L, "fullName"), email: t(L, "email"), phone: t(L, "phone"), address: t(L, "address"), city: t(L, "city"), notes: t(L, "notes"), payment: t(L, "payment"), discountCode: t(L, "discountCode"), placeOrder: t(L, "placeOrder") }}
           />
           <aside className="card h-fit" aria-label="Order summary">

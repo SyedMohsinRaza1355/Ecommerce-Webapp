@@ -146,7 +146,10 @@ export async function updateProduct(ctx: TenantContext, id: string, input: Produ
   return { ok: true };
 }
 
-export async function listPublished(ctx: TenantContext, opts: { q?: string; categoryId?: string; page?: number; pageSize?: number } = {}) {
+export type Sort = "new" | "price_asc" | "price_desc" | "name";
+const SORTS: Record<Sort, Record<string, 1 | -1>> = { new: { createdAt: -1 }, price_asc: { priceMinor: 1, createdAt: -1 }, price_desc: { priceMinor: -1, createdAt: -1 }, name: { name: 1 } };
+
+export async function listPublished(ctx: TenantContext, opts: { q?: string; categoryId?: string; page?: number; pageSize?: number; sort?: Sort } = {}) {
   const pageSize = Math.min(opts.pageSize ?? 24, 60);
   const page = Math.max(opts.page ?? 1, 1);
   const col = await products.collection(ctx);
@@ -158,7 +161,7 @@ export async function listPublished(ctx: TenantContext, opts: { q?: string; cate
   }
   const f = products.scope(ctx, filter as never);
   const [items, total] = await Promise.all([
-    col.find(f).sort({ createdAt: -1 }).skip((page - 1) * pageSize).limit(pageSize).toArray(),
+    col.find(f).sort(SORTS[opts.sort ?? "new"] ?? SORTS.new).skip((page - 1) * pageSize).limit(pageSize).toArray(),
     col.countDocuments(f),
   ]);
   return { items, total, page, pageSize };

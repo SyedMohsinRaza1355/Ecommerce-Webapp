@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useActionState, useSyncExternalStore, type ReactNode } from "react";
 import type { CartState } from "@/app/s/[sub]/(shop)/actions";
+import { showToast } from "./Toast";
 
 /** Auto-refresh while an order is still moving, so status updates without a manual reload (ST-13). */
 export function LiveRefresh({ active, seconds = 8 }: { active: boolean; seconds?: number }) {
@@ -32,19 +33,21 @@ export function CookieNotice({ text, ok }: { text: string; ok: string }) {
   );
 }
 
-export function AddToCart({ action, label, soldOut, max }: { action: (p: CartState, f: FormData) => Promise<CartState>; label: string; soldOut: boolean; max: number }) {
-  const [state, act, pending] = useActionState<CartState, FormData>(action, undefined);
+export function AddToCart({ action, label, soldOut, max, cartHref, price, bar = false }: { action: (p: CartState, f: FormData) => Promise<CartState>; label: string; soldOut: boolean; max: number; cartHref?: string; price?: string; bar?: boolean }) {
+  const [, act, pending] = useActionState<CartState, FormData>(async (p, f) => {
+    const r = await action(p, f);
+    if (r?.error) showToast({ text: r.error, error: true });
+    else if (r) showToast({ text: r.message ?? "Added to your cart.", href: cartHref, label: "Cart" });
+    return r;
+  }, undefined);
   return (
-    <form action={act} className="flex flex-wrap items-end gap-3">
+    <form action={act} className={bar ? "fixed inset-x-0 bottom-14 z-20 flex items-end gap-3 border-t border-line bg-white/95 p-3 backdrop-blur md:hidden" : "flex flex-wrap items-end gap-3"}>
+      {bar && price && <p className="shrink-0 text-lg font-extrabold">{price}</p>}
       <label className="field mb-0">
         <span>Qty</span>
         <input className="input w-24" type="number" name="qty" min={1} max={Math.max(1, Math.min(max, 99))} defaultValue={1} disabled={soldOut} />
       </label>
-      <button className="btn btn-primary" disabled={soldOut || pending}>{pending ? "..." : label}</button>
-      <div aria-live="polite" className="basis-full">
-        {state?.error && <p className="err pop-in">{state.error}</p>}
-        {state?.message && <p className="ok pop-in">{state.message}</p>}
-      </div>
+      <button className={`btn btn-primary ${bar ? "grow" : ""}`} disabled={soldOut || pending}>{pending ? "..." : label}</button>
     </form>
   );
 }

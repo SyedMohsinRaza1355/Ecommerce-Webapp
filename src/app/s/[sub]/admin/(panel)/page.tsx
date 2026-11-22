@@ -8,6 +8,8 @@ import { fmtMoney, fmtDate } from "@/lib/i18n";
 import { hoursAgo } from "@/lib/time";
 import { Icon } from "@/components/Icons";
 import { getPaymentConfig } from "@/lib/payments/config";
+import { salesByDay } from "@/lib/commerce/extras";
+import SalesChart from "@/components/admin/SalesChart";
 
 export const metadata = { title: "Dashboard" };
 
@@ -80,6 +82,13 @@ export default async function AdminHome({ params, searchParams }: { params: Prom
         {canReports && <Stat i={2} label="Net sales" value={fmtMoney(net, cur, "en")} icon={Icon.tag} />}
         <Stat i={3} label="Products live" value={`${publishedCount} / ${totalProducts}`} icon={Icon.box} />
       </div>
+
+      {canReports && (
+        <section className="card reveal reveal-3 mt-6" aria-labelledby="sales7">
+          <h2 id="sales7" className="font-extrabold">Sales, last 7 days</h2>
+          <SalesChart days={await salesByDay(ctx, 7)} currency={cur} />
+        </section>
+      )}
 
       <div className="mt-6 grid gap-5 lg:grid-cols-2">
         {canOrders && (

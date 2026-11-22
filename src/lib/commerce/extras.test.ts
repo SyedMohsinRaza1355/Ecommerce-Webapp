@@ -7,7 +7,7 @@ import { createProduct, getSettings, ProductInput, products } from "./store";
 import { placeOrder, orders, type Features } from "./orders";
 import {
   csvCell, toCsv, parseCsv, exportCsv, importProductsCsv, savePage, listPages, getPageBySlug, deletePage, subscribeNewsletter, saveContactMessage,
-  ratingSummary, listReviews, setReviewStatus, productReport, customerReport, taxReport, buildBackup, lowStockItems,
+  ratingSummary, listReviews, setReviewStatus, productReport, customerReport, taxReport, buildBackup, lowStockItems, salesByDay,
 } from "./extras";
 import type { Actor } from "@/lib/auth/rbac";
 
@@ -233,6 +233,19 @@ describe.skipIf(!HAS_DB)("store features (Atlas, synthetic tenants)", () => {
       const tb = await taxReport(B, from, to); // store B only ever sold 5 x 5.00 in the low-stock test
       expect(tb).toHaveLength(1);
       expect(tb[0]).toMatchObject({ orders: 1, subtotalMinor: 2500 });
+    });
+    it("the dashboard chart has one entry per day, fills empty days with zero, nets out refunds and ignores other stores", async () => {
+      const days = await salesByDay(A, 7);
+      expect(days).toHaveLength(7);
+      expect(new Set(days.map((d) => d.day)).size).toBe(7);
+      expect(days.slice(0, 6).every((d) => d.totalMinor === 0 && d.orders === 0)).toBe(true); // everything was sold today
+      const today = days[6];
+      const live = await (await tenantDb(A)).collection("orders").aggregate([{ $match: { instanceId: A.instanceId, state: { $ne: "cancelled" }, "payment.state": { $in: ["captured", "cod_due", "partially_refunded", "refunded"] } } }, { $group: { _id: null, t: { $sum: { $subtract: ["$totalMinor", { $ifNull: ["$payment.refundedMinor", 0] }] } }, n: { $sum: 1 } } }]).toArray();
+      expect(today.totalMinor).toBe(live[0].t);
+      expect(today.orders).toBe(live[0].n);
+      expect((await salesByDay(A, 7, new Date(Date.now() + 40 * 86_400_000))).every((d) => d.totalMinor === 0)).toBe(true); // a window that does not include today
+      const b = await salesByDay(B, 7);
+      expect(b.reduce((n, d) => n + d.totalMinor, 0)).toBeLessThan(today.totalMinor);
     });
     it("the backup includes the store's data but no password hashes, 2-step secrets or payment keys, and nothing from other stores", async () => {
       const c = await (await tenantDb(A)).collection("customers").insertOne({ _id: "cb" as never, instanceId: A.instanceId, email: "bk@example.com", name: "B", passwordHash: "$2b$12$secret", emailVerified: true, addresses: [], wishlist: [], createdAt: new Date() });
