@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadStore } from "@/lib/commerce/load";
 import { findOrderByToken } from "@/lib/commerce/orders";
+import { reconcileStripePayment } from "@/lib/commerce/payflow";
 import { LiveRefresh } from "@/components/store/Bits";
 import { Icon } from "@/components/Icons";
 import { fmtDate, fmtMoney, t } from "@/lib/i18n";
@@ -15,12 +16,18 @@ const STEP_TEXT: Record<string, string> = {
 
 const PAY_TEXT: Record<string, string> = { captured: "Payment received", failed: "Payment failed", requires_payment: "Waiting for payment", partially_refunded: "Partly refunded", refunded: "Refunded", cod_due: "Pay on delivery" };
 
-export default async function OrderPage({ params }: { params: Promise<{ sub: string; token: string }> }) {
+export default async function OrderPage({ params, searchParams }: { params: Promise<{ sub: string; token: string }>; searchParams: Promise<{ return?: string }> }) {
   const { sub, token } = await params;
+  const { return: returned } = await searchParams;
   const s = await loadStore(sub);
   if (s.status !== "ok") notFound();
-  const o = await findOrderByToken(s.ctx, token);
+  let o = await findOrderByToken(s.ctx, token);
   if (!o) notFound();
+  if (returned === "1" && o.payment.provider === "stripe" && o.payment.state !== "captured") {
+    // the customer just came back from Stripe: ask Stripe directly instead of waiting for the notification
+    await reconcileStripePayment(s.ctx, o._id, async () => s.settings.branding.storeName || s.instance.name);
+    o = (await findOrderByToken(s.ctx, token)) ?? o;
+  }
   const L = s.locale;
   const money = (n: number) => fmtMoney(n, o.currency, L);
   const active = !["completed", "cancelled"].includes(o.state);
@@ -37,7 +44,7 @@ export default async function OrderPage({ params }: { params: Promise<{ sub: str
         <p className="mt-3 flex flex-wrap justify-center gap-2" aria-live="polite">
           <span className="badge badge-indigo">{t(L, "status")}: {STEP_TEXT[o.state] ?? o.state}</span>
           <span className={`badge ${o.payment.state === "captured" ? "badge-green" : o.payment.state === "failed" ? "badge-red" : "badge-amber"}`}>
-            {o.payment.method === "cod" ? t(L, "payCod") : o.payment.state === "captured" ? t(L, "paymentReceived") : o.payment.state === "failed" ? t(L, "paymentFailed") : o.payment.state.startsWith("refund") || o.payment.state === "partially_refunded" ? "Refunded" : t(L, "awaitingPayment")}
+            {o.payment.method === "cod" ? t(L, "payCod") : o.payment.method === "manual" && o.payment.state === "requires_payment" ? (o.payment.manual?.reference ? "Payment being checked" : "Waiting for your payment") : o.payment.state === "captured" ? t(L, "paymentReceived") : o.payment.state === "failed" ? t(L, "paymentFailed") : o.payment.state.startsWith("refund") || o.payment.state === "partially_refunded" ? "Refunded" : t(L, "awaitingPayment")}
           </span>
         </p>
         {o.payment.state === "failed" && o.state === "pending" && (

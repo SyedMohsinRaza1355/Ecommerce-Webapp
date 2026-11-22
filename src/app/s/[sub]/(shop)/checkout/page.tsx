@@ -7,6 +7,8 @@ import { cartView } from "@/lib/commerce/cart";
 import { pricingConfig } from "@/lib/commerce/features";
 import { fmtMoney, t } from "@/lib/i18n";
 import { placeOrderAction } from "../actions";
+import { getPaymentConfig, checkoutMethods } from "@/lib/payments/config";
+import { currentCustomer } from "@/lib/commerce/customers";
 import CheckoutForm from "./CheckoutForm";
 
 export const metadata = { title: "Checkout" };
@@ -21,7 +23,10 @@ export default async function CheckoutPage({ params }: { params: Promise<{ sub: 
   const v = await cartView(s.ctx, cartId, pricingConfig(s.settings, s.feat), s.feat.stockTracking);
   if (v.lines.length === 0 || v.hasProblems) redirect(`${base}/cart`);
   const money = (n: number) => fmtMoney(n, s.settings.currency, L);
-  const canPay = s.feat.card || s.feat.cod;
+  const methods = checkoutMethods(await getPaymentConfig(s.ctx), s.feat, { card: t(L, "payCard"), cod: t(L, "payCod") });
+  const canPay = methods.length > 0;
+  const me = s.eff.get("F-045")?.enabled ? await currentCustomer(s) : null;
+  const defAddr = me?.addresses?.[0];
 
   return (
     <div>
@@ -33,10 +38,10 @@ export default async function CheckoutPage({ params }: { params: Promise<{ sub: 
           <CheckoutForm
             action={placeOrderAction.bind(null, sub)}
             idem={randomUUID()}
-            card={s.feat.card}
-            cod={s.feat.cod}
+            methods={methods}
+            prefill={me ? { name: me.name, email: me.email, phone: me.phone ?? defAddr?.phone ?? "", address: defAddr?.address ?? "", city: defAddr?.city ?? "" } : undefined}
             discounts={s.feat.discounts}
-            labels={{ contact: t(L, "contact"), fullName: t(L, "fullName"), email: t(L, "email"), phone: t(L, "phone"), address: t(L, "address"), city: t(L, "city"), notes: t(L, "notes"), payment: t(L, "payment"), payCard: t(L, "payCard"), payCod: t(L, "payCod"), discountCode: t(L, "discountCode"), placeOrder: t(L, "placeOrder") }}
+            labels={{ contact: t(L, "contact"), fullName: t(L, "fullName"), email: t(L, "email"), phone: t(L, "phone"), address: t(L, "address"), city: t(L, "city"), notes: t(L, "notes"), payment: t(L, "payment"), discountCode: t(L, "discountCode"), placeOrder: t(L, "placeOrder") }}
           />
           <aside className="card h-fit" aria-label="Order summary">
             <h2 className="font-extrabold">{t(L, "yourOrder")}</h2>

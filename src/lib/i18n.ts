@@ -17,7 +17,7 @@ const en = {
   paymentFailed: "Payment failed. You can try again.", tryAgain: "Try again", paymentReceived: "Payment received", awaitingPayment: "Waiting for payment",
   storeSuspended: "This store is temporarily unavailable", poweredBy: "Powered by Storeforge", privacy: "Privacy", terms: "Terms",
   cookieNotice: "We only use essential cookies to keep your cart and sign-in working.", ok: "OK", details: "Details", description: "Description",
-  yourOrder: "Your order", items: "Items", timeline: "Order timeline", signIn: "Sign in", adminArea: "Store admin",
+  yourOrder: "Your order", items: "Items", timeline: "Order timeline", signIn: "Sign in", account: "Account", myAccount: "My account", signOut: "Sign out", createAccount: "Create account", wishlist: "Wishlist", adminArea: "Store admin",
 };
 
 const ur: typeof en = {
@@ -34,7 +34,7 @@ const ur: typeof en = {
   paymentFailed: "ادائیگی ناکام ہوئی۔ آپ دوبارہ کوشش کر سکتے ہیں۔", tryAgain: "دوبارہ کوشش کریں", paymentReceived: "ادائیگی موصول ہوئی", awaitingPayment: "ادائیگی کا انتظار",
   storeSuspended: "یہ دکان عارضی طور پر دستیاب نہیں", poweredBy: "Storeforge کے ذریعے", privacy: "پرائیویسی", terms: "شرائط",
   cookieNotice: "ہم صرف ضروری کوکیز استعمال کرتے ہیں تاکہ آپ کی ٹوکری اور سائن ان کام کرتے رہیں۔", ok: "ٹھیک ہے", details: "تفصیلات", description: "تفصیل",
-  yourOrder: "آپ کا آرڈر", items: "اشیاء", timeline: "آرڈر کی ٹائم لائن", signIn: "سائن ان", adminArea: "اسٹور ایڈمن",
+  yourOrder: "آپ کا آرڈر", items: "اشیاء", timeline: "آرڈر کی ٹائم لائن", signIn: "سائن ان", account: "اکاؤنٹ", myAccount: "میرا اکاؤنٹ", signOut: "سائن آؤٹ", createAccount: "اکاؤنٹ بنائیں", wishlist: "پسندیدہ", adminArea: "اسٹور ایڈمن",
 };
 
 export type Key = keyof typeof en;

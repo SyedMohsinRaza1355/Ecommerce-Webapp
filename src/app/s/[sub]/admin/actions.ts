@@ -21,6 +21,7 @@ import { validatePasswordStrength } from "@/lib/auth/password";
 import { clearResolutionCache } from "@/lib/tenant/resolve";
 import { bumpInstance } from "@/lib/platform/manage";
 import { clearToggleCache } from "@/lib/toggles/service";
+import { rateLimit } from "@/lib/auth/ratelimit";
 
 export type AdminState = undefined | { error?: string; message?: string; link?: string; secret?: string; fields?: Record<string, string> };
 
@@ -294,4 +295,84 @@ export async function processOutboxAction(sub: string) {
   const { store } = await guard(sub, "orders.process");
   await processOutbox(store.ctx);
   revalidatePath(`${home(sub)}/emails`);
+}
+
+// ---------------- payments (the owner connects their OWN accounts) ----------------
+import { connectStripe, disconnectStripe, setTestMode, upsertManual, setManualEnabled, removeManual, type ManualKind } from "@/lib/payments/config";
+import { confirmManualPayment } from "@/lib/commerce/payflow";
+import { enqueueEmail } from "@/lib/commerce/outbox";
+
+export async function connectStripeAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "payments.manage");
+  if (!g) return { error: "Only the store owner can connect payment accounts." };
+  if (g.staff.impersonating) return { error: "Payment settings cannot be changed in a support session." };
+  if (!(await rateLimit(`pay-connect:${g.store.instance._id}`, 8, 10 * 60_000)).ok) return { error: "Too many attempts. Wait a few minutes and try again." };
+  const r = await connectStripe(g.store.ctx, fd(form, "secretKey"));
+  if (!r.ok) return { error: r.error };
+  await record(g.store, g.staff, "payments.stripe_connected", `${r.accountName} (${r.livemode ? "live" : "test"})`);
+  await setOwnerFeature(g.store.instance, g.staff.actor, "F-037", true, true).catch(() => undefined);
+  revalidatePath(`/s/${sub}`, "layout");
+  return { message: `Connected to ${r.accountName} (${r.livemode ? "live mode: real money" : "test mode: no real money"}). Customers can now pay by card and the money goes to your Stripe account.` };
+}
+
+export async function disconnectStripeAction(sub: string): Promise<AdminState> {
+  const g = await guardSoft(sub, "payments.manage");
+  if (!g || g.staff.impersonating) return { error: "Only the store owner can change payment accounts." };
+  await disconnectStripe(g.store.ctx);
+  await record(g.store, g.staff, "payments.stripe_disconnected");
+  revalidatePath(`/s/${sub}`, "layout");
+  return { message: "Stripe disconnected. Card payments are off until you connect an account again." };
+}
+
+export async function testModeAction(sub: string, on: boolean): Promise<AdminState> {
+  const g = await guardSoft(sub, "payments.manage");
+  if (!g || g.staff.impersonating) return { error: "Only the store owner can change payment settings." };
+  await setTestMode(g.store.ctx, on);
+  await record(g.store, g.staff, on ? "payments.test_on" : "payments.test_off");
+  revalidatePath(`/s/${sub}`, "layout");
+  return { message: on ? "Test payments are on. No real money moves." : "Test payments are off." };
+}
+
+export async function manualMethodAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "payments.manage");
+  if (!g || g.staff.impersonating) return { error: "Only the store owner can change payment settings." };
+  const kind = fd(form, "kind") as ManualKind;
+  const r = await upsertManual(g.store.ctx, { kind, accountTitle: fd(form, "accountTitle"), accountNumber: fd(form, "accountNumber"), instructions: fd(form, "instructions"), label: fd(form, "label") });
+  if (!r.ok) return { error: r.error };
+  // make sure the matching catalogue feature is on so customers actually see the option
+  const feature = kind === "bank" || kind === "other" ? "F-039" : "F-040";
+  const f = await setOwnerFeature(g.store.instance, g.staff.actor, feature, true, true);
+  await record(g.store, g.staff, "payments.manual_saved", kind);
+  revalidatePath(`/s/${sub}`, "layout");
+  return f.ok ? { message: "Saved. Customers can now choose this at checkout." } : { message: "Saved, but it is hidden from customers:", error: f.error };
+}
+
+export async function manualMethodOpAction(sub: string, id: string, op: "enable" | "disable" | "remove"): Promise<AdminState> {
+  const g = await guardSoft(sub, "payments.manage");
+  if (!g || g.staff.impersonating) return { error: "Only the store owner can change payment settings." };
+  if (op === "remove") await removeManual(g.store.ctx, id); else await setManualEnabled(g.store.ctx, id, op === "enable");
+  await record(g.store, g.staff, `payments.manual_${op}`, id);
+  revalidatePath(`/s/${sub}`, "layout");
+  return { message: "Saved." };
+}
+
+export async function confirmPaymentAction(sub: string, orderId: string): Promise<AdminState> {
+  const g = await guardSoft(sub, "orders.process");
+  if (!g) return { error: "You do not have permission to confirm payments." };
+  const r = await confirmManualPayment(g.store.ctx, orderId, g.staff.actor, async () => g.store.settings.branding.storeName || g.store.instance.name);
+  if (r.ok) await record(g.store, g.staff, "order.payment_confirmed", orderId);
+  revalidatePath(`${home(sub)}/orders`);
+  return r.ok ? { message: "Marked as paid. The order is confirmed and the customer was notified." } : { error: r.error };
+}
+
+export async function testEmailAction(sub: string): Promise<AdminState> {
+  const g = await guardSoft(sub, "activity.view");
+  if (!g) return { error: "You do not have permission." };
+  const to = g.staff.user?.email;
+  if (!to) return { error: "Sign in with your own account to send a test email." };
+  if (!(await rateLimit(`test-email:${g.store.instance._id}`, 5, 10 * 60_000)).ok) return { error: "Too many test emails. Try again later." };
+  await enqueueEmail(g.store.ctx, "test.email", to, { storeName: g.store.settings.branding.storeName || g.store.instance.name });
+  await processOutbox(g.store.ctx);
+  revalidatePath(`${home(sub)}/emails`);
+  return { message: `Test email queued for ${to}. Check the list below to see whether it was sent.` };
 }

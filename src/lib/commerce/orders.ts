@@ -9,6 +9,8 @@ import { canOrderMove, roleMayMoveOrder, type OrderState } from "./states";
 import { signBody, verifySignature, type GatewayEvent } from "./gateway";
 import { enqueueEmail, processOutbox } from "./outbox";
 import { formatMajor, money } from "@/lib/money/money";
+import { getPaymentConfig, getStripeKey, getStripeWebhookSecret } from "@/lib/payments/config";
+import { createCheckoutSession, createRefund, retrieveCheckoutSession, verifyStripeSignature } from "@/lib/payments/stripe";
 import type { Order, Product, Settings } from "./types";
 
 export const orders = new TenantRepo<Order>("orders");
@@ -19,22 +21,32 @@ export function trackingTokenFor(instanceId: string, orderId: string): string {
   return createHmac("sha256", env().sessionSecret || "dev").update(`track:${instanceId}:${orderId}`).digest("base64url");
 }
 
-/** Absolute link to the customer's order page, e.g. https://shop.example/s/demo/order/<token>. */
-export async function trackUrlFor(ctx: TenantContext, token: string): Promise<string> {
-  const inst = await (await platformDb()).collection<{ _id: string; subdomain: string }>("instances").findOne({ _id: ctx.instanceId }, { projection: { subdomain: 1 } });
+export function originOf(): string {
   const base = env().baseDomain;
-  const origin = /^(localhost|127\.)/.test(base) ? `http://${base}` : `https://${base}`;
-  return `${origin}/s/${inst?.subdomain ?? ""}/order/${token}`;
+  return /^(localhost|127\.)/.test(base) ? `http://${base}` : `https://${base}`;
 }
 
-export type Features = { shipping: boolean; freeShipping: boolean; tax: boolean; discounts: boolean; cod: boolean; card: boolean; emails: boolean; stockTracking: boolean };
+/** Absolute link to the store's pages, e.g. https://shop.example/s/demo. */
+export async function storeUrlFor(ctx: TenantContext): Promise<string> {
+  const inst = await (await platformDb()).collection<{ _id: string; subdomain: string }>("instances").findOne({ _id: ctx.instanceId }, { projection: { subdomain: 1 } });
+  return `${originOf()}/s/${inst?.subdomain ?? ""}`;
+}
+
+/** Absolute link to the customer's order page, e.g. https://shop.example/s/demo/order/<token>. */
+export async function trackUrlFor(ctx: TenantContext, token: string): Promise<string> {
+  return `${await storeUrlFor(ctx)}/order/${token}`;
+}
+
+export type Features = { shipping: boolean; freeShipping: boolean; tax: boolean; discounts: boolean; cod: boolean; card: boolean; emails: boolean; stockTracking: boolean; manualBank?: boolean; wallet?: boolean };
 
 export type PlaceInput = {
   items: { productId: string; qty: number }[];
   customer: Order["customer"];
-  method: "card" | "cod";
+  /** "card", "cod" or "manual:<methodId>" */
+  method: string;
   idempotencyKey: string;
   discountCode?: string;
+  customerId?: string;
 };
 
 export type PlaceResult =
@@ -96,8 +108,22 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(input.idempotencyKey)) return { ok: false, error: "Invalid request. Please reload the page.", code: "validation" };
   const bad = validateCustomer(input.customer);
   if (bad) return { ok: false, error: bad, code: "validation" };
-  if (input.method === "card" && !feat.card) return { ok: false, error: "Card payment is not available.", code: "method" };
-  if (input.method === "cod" && !feat.cod) return { ok: false, error: "Cash on delivery is not available.", code: "method" };
+  const cfg = await getPaymentConfig(ctx);
+  let provider: "test" | "stripe" | undefined;
+  let manual: NonNullable<Order["payment"]["manual"]> | undefined;
+  if (input.method === "card") {
+    if (!feat.card || !(cfg.stripe || cfg.testMode)) return { ok: false, error: "Card payment is not available.", code: "method" };
+    provider = cfg.stripe ? "stripe" : "test";
+  } else if (input.method === "cod") {
+    if (!feat.cod) return { ok: false, error: "Cash on delivery is not available.", code: "method" };
+  } else if (input.method.startsWith("manual:")) {
+    const m = cfg.manual.find((x) => x.id === input.method.slice(7) && x.enabled);
+    const allowed = m && (m.kind === "bank" || m.kind === "other" ? feat.manualBank : feat.wallet);
+    if (!m || !allowed) return { ok: false, error: "That payment method is not available.", code: "method" };
+    manual = { methodId: m.id, label: m.label, kind: m.kind, accountTitle: m.accountTitle, accountNumber: m.accountNumber, instructions: m.instructions };
+  } else {
+    return { ok: false, error: "Choose a payment method.", code: "method" };
+  }
   if (!input.items.length) return { ok: false, error: "Your cart is empty.", code: "empty" };
 
   // merge duplicate lines, validate quantities
@@ -165,7 +191,8 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
     shippingMinor: totals.shippingMinor, taxMinor: totals.taxMinor, totalMinor: totals.totalMinor,
     customer: { ...input.customer, name: input.customer.name.trim(), email: input.customer.email.trim().toLowerCase() },
     state: cod ? "confirmed" : "pending",
-    payment: { method: input.method, state: cod ? "cod_due" : "requires_payment", refundedMinor: 0, refunds: [] },
+    ...(input.customerId ? { customerId: input.customerId } : {}),
+    payment: { method: manual ? "manual" : cod ? "cod" : "card", state: cod ? "cod_due" : "requires_payment", ...(provider ? { provider } : {}), ...(manual ? { manual } : {}), refundedMinor: 0, refunds: [] },
     stockReserved: tracked.some((t) => t.tracked),
     history: [{ at: now, kind: "order", to: cod ? "confirmed" : "pending", by: "customer" }],
     createdAt: now, updatedAt: now,
@@ -183,12 +210,16 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
   }
 
   const trackingToken = trackingTokenFor(ctx.instanceId, id);
-  if (!cod) {
+  if (provider === "test") {
     const intentRef = `pi_${randomUUID().replace(/-/g, "")}`;
     await (await platformDb()).collection("payment_intents").insertOne({ _id: intentRef as never, instanceId: ctx.instanceId, orderId: id, amountMinor: totals.totalMinor, currency: settings.currency, createdAt: now });
     await orders.updateById(ctx, id, { "payment.intentRef": intentRef } as never);
-  } else if (feat.emails) {
-    await enqueueEmail(ctx, "order.placed", order.customer.email, { orderNo, storeName, total: `${settings.currency} ${formatMajor(money(totals.totalMinor, settings.currency))}`, trackUrl: await trackUrlFor(ctx, trackingToken) });
+  }
+  if ((cod || manual) && feat.emails) {
+    await enqueueEmail(ctx, "order.placed", order.customer.email, {
+      orderNo, storeName, total: `${settings.currency} ${formatMajor(money(totals.totalMinor, settings.currency))}`, trackUrl: await trackUrlFor(ctx, trackingToken),
+      ...(manual ? { payTo: `${manual.label}: ${manual.accountTitle}, ${manual.accountNumber}. ${manual.instructions}`.trim() } : {}),
+    });
     await processOutbox(ctx).catch(() => undefined);
   }
   return { ok: true, orderId: id, orderNo, trackingToken, needsPayment: !cod };
@@ -228,30 +259,37 @@ export async function handleGatewayWebhook(rawBody: string, signature: string | 
     return { status: 422, body: { ok: false, reason: "amount_mismatch" } };
   }
 
-  const col = await orders.collection(ctx);
-  const now = new Date();
   if (ev.type === "payment.succeeded") {
-    const r = await col.findOneAndUpdate(
-      { _id: order._id, instanceId: ctx.instanceId, "payment.state": { $in: ["requires_payment", "failed"] } } as never,
-      {
-        $set: { "payment.state": "captured", updatedAt: now, ...(order.state === "pending" ? { state: "confirmed" } : {}), ...(order.state === "cancelled" ? { "flags.refundRequired": true } : {}) },
-        $push: { history: { $each: [{ at: now, kind: "payment", from: order.payment.state, to: "captured", by: "gateway" }, ...(order.state === "pending" ? [{ at: now, kind: "order", from: "pending", to: "confirmed", by: "gateway" }] : [])] } },
-      } as never,
-      { returnDocument: "after" },
-    );
-    if (r) {
-      const store = storeNameOf ? await storeNameOf(ctx.instanceId) : "Our store";
-      await enqueueEmail(ctx, "order.paid", order.customer.email, { orderNo: order.orderNo, storeName: store, trackUrl: await trackUrlFor(ctx, trackingTokenFor(ctx.instanceId, order._id)) });
-      await processOutbox(ctx).catch(() => undefined);
-    }
+    await capturePayment(ctx, order, "gateway", storeNameOf);
     return { status: 200, body: { ok: true } };
   }
+  const col = await orders.collection(ctx);
+  const now = new Date();
   // payment.failed: only meaningful while still waiting for payment (late/out-of-order failures are ignored)
   await col.updateOne(
     { _id: order._id, instanceId: ctx.instanceId, "payment.state": "requires_payment" } as never,
     { $set: { "payment.state": "failed", updatedAt: now }, $push: { history: { at: now, kind: "payment", from: "requires_payment", to: "failed", by: "gateway" } } } as never,
   );
   return { status: 200, body: { ok: true } };
+}
+
+/** Marks an order paid exactly once (webhooks, polling and manual confirmation all end up here). */
+export async function capturePayment(ctx: TenantContext, order: Order, by: string, storeNameOf?: (instanceId: string) => Promise<string>, extra: Record<string, unknown> = {}): Promise<boolean> {
+  const col = await orders.collection(ctx);
+  const now = new Date();
+  const r = await col.findOneAndUpdate(
+    { _id: order._id, instanceId: ctx.instanceId, "payment.state": { $in: ["requires_payment", "failed"] } } as never,
+    {
+      $set: { "payment.state": "captured", updatedAt: now, ...extra, ...(order.state === "pending" ? { state: "confirmed" } : {}), ...(order.state === "cancelled" ? { "flags.refundRequired": true } : {}) },
+      $push: { history: { $each: [{ at: now, kind: "payment", from: order.payment.state, to: "captured", by }, ...(order.state === "pending" ? [{ at: now, kind: "order", from: "pending", to: "confirmed", by }] : [])] } },
+    } as never,
+    { returnDocument: "after" },
+  );
+  if (!r) return false;
+  const store = storeNameOf ? await storeNameOf(ctx.instanceId) : "Our store";
+  await enqueueEmail(ctx, "order.paid", order.customer.email, { orderNo: order.orderNo, storeName: store, trackUrl: await trackUrlFor(ctx, trackingTokenFor(ctx.instanceId, order._id)) });
+  await processOutbox(ctx).catch(() => undefined);
+  return true;
 }
 
 /** The mock hosted payment page reports its outcome through the same signed webhook path. */
@@ -268,7 +306,7 @@ export async function retryPayment(ctx: TenantContext, orderId: string): Promise
   const now = new Date();
   const r = await col.updateOne(
     { _id: orderId, instanceId: ctx.instanceId, state: "pending", "payment.state": "failed" } as never,
-    { $set: { "payment.state": "requires_payment", updatedAt: now }, $push: { history: { at: now, kind: "payment", from: "failed", to: "requires_payment", by: "customer" } } } as never,
+    { $set: { "payment.state": "requires_payment", updatedAt: now }, $inc: { "payment.attempt": 1 }, $push: { history: { at: now, kind: "payment", from: "failed", to: "requires_payment", by: "customer" } } } as never,
   );
   return r.matchedCount === 1;
 }
@@ -281,7 +319,7 @@ export async function transitionOrder(ctx: TenantContext, orderId: string, to: O
   if (!order) return { ok: false, error: "Order not found." };
   if (!roleMayMoveOrder(actor.role, to)) return { ok: false, error: "Your role cannot make this change." };
   if (!canOrderMove(order.state, to)) return { ok: false, error: `An order that is "${order.state}" cannot move to "${to}".` };
-  if (to === "confirmed" && order.payment.method === "card" && order.payment.state !== "captured") return { ok: false, error: "A card order is confirmed automatically once payment arrives." };
+  if (to === "confirmed" && (order.payment.method === "card" || order.payment.method === "manual") && order.payment.state !== "captured") return { ok: false, error: order.payment.method === "manual" ? "Confirm the payment first (Mark as paid), then the order is confirmed." : "A card order is confirmed automatically once payment arrives." };
 
   const col = await orders.collection(ctx);
   const now = new Date();
@@ -323,6 +361,20 @@ export async function refundOrder(ctx: TenantContext, orderId: string, amountMin
     { returnDocument: "after" },
   );
   if (!after) return { ok: false, error: "That amount is more than what is left to refund." };
+  if (order.payment.provider === "stripe") {
+    // the money really moves: ask Stripe first, undo our record if it refuses
+    const pi = order.payment.stripe?.paymentIntent;
+    const skey = await getStripeKey(ctx);
+    let failure: string | null = null;
+    if (!pi || !skey) failure = "This payment is not linked to Stripe, so it cannot be refunded here. Refund it in your Stripe dashboard.";
+    else {
+      try { await createRefund(skey, pi, amountMinor, `rf-${orderId}-${key}`); } catch (e) { failure = `Stripe could not refund: ${(e as Error).message}`; }
+    }
+    if (failure) {
+      await col.updateOne({ _id: orderId, instanceId: ctx.instanceId } as never, { $inc: { "payment.refundedMinor": -amountMinor }, $pull: { "payment.refunds": { id: key } } } as never);
+      return { ok: false, error: failure };
+    }
+  }
   const full = after.payment.refundedMinor >= after.totalMinor;
   await col.updateOne(
     { _id: orderId, instanceId: ctx.instanceId } as never,
@@ -336,10 +388,13 @@ export async function refundOrder(ctx: TenantContext, orderId: string, amountMin
 }
 
 /** Compensation for abandoned card orders: cancel and give the stock back (DEC-06). */
+export const MANUAL_PAYMENT_WINDOW_MS = 3 * 24 * 60 * 60_000;
+
 export async function expireUnpaidOrders(ctx: TenantContext, olderThanMs = 30 * 60_000, now = new Date()): Promise<number> {
   const col = await orders.collection(ctx);
   const cutoff = new Date(now.getTime() - olderThanMs);
-  const stale = await col.find({ instanceId: ctx.instanceId, state: "pending", "payment.state": { $in: ["requires_payment", "failed"] }, createdAt: { $lt: cutoff } } as never).limit(100).toArray();
+  const manualCutoff = new Date(now.getTime() - MANUAL_PAYMENT_WINDOW_MS);
+  const stale = await col.find({ instanceId: ctx.instanceId, state: "pending", "payment.state": { $in: ["requires_payment", "failed"] }, $or: [{ "payment.method": { $ne: "manual" }, createdAt: { $lt: cutoff } }, { "payment.method": "manual", createdAt: { $lt: manualCutoff } }] } as never).limit(100).toArray();
   let n = 0;
   for (const o of stale) {
     const r = await col.updateOne(

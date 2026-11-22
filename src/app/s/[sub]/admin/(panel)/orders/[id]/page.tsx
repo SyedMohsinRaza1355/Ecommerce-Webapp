@@ -8,7 +8,7 @@ import { nextOrderStates, roleMayMoveOrder } from "@/lib/commerce/states";
 import { fmtDate, fmtMoney } from "@/lib/i18n";
 import { formatMajor, money as toMoney } from "@/lib/money/money";
 import { ActionButton, AF } from "@/components/admin/Forms";
-import { orderStatusAction, refundAction } from "@/app/s/[sub]/admin/actions";
+import { orderStatusAction, refundAction, confirmPaymentAction } from "@/app/s/[sub]/admin/actions";
 
 export const metadata = { title: "Order" };
 
@@ -19,7 +19,7 @@ export default async function OrderDetail({ params }: { params: Promise<{ sub: s
   if (!o) notFound();
   const money = (n: number) => fmtMoney(n, o.currency, "en");
   const canRefund = authorize(staff.actor, "orders.process", store.ctx).allow && ["captured", "partially_refunded"].includes(o.payment.state);
-  const nexts = nextOrderStates(o.state).filter((s) => roleMayMoveOrder(staff.actor.role, s) && !(s === "confirmed" && o.payment.method === "card" && o.payment.state !== "captured"));
+  const nexts = nextOrderStates(o.state).filter((s) => roleMayMoveOrder(staff.actor.role, s) && !(s === "confirmed" && o.payment.method !== "cod" && o.payment.state !== "captured"));
   const remaining = o.totalMinor - o.payment.refundedMinor;
 
   return (
@@ -55,6 +55,19 @@ export default async function OrderDetail({ params }: { params: Promise<{ sub: s
           {o.customer.notes && <p className="mt-2 rounded-lg bg-amber-50 p-2 text-sm">Note: {o.customer.notes}</p>}
         </section>
       </div>
+
+      {o.payment.method === "manual" && o.payment.manual && (
+        <section className="card mt-5 border-amber-300" aria-labelledby="mp">
+          <h2 id="mp" className="font-extrabold">Manual payment: {o.payment.manual.label}</h2>
+          {o.payment.state === "requires_payment" ? (
+            <>
+              <p className="mt-1 text-sm">Waiting for <strong>{money(o.totalMinor)}</strong> to arrive in {o.payment.manual.accountTitle} ({o.payment.manual.accountNumber}).</p>
+              <p className="mt-1 text-sm">{o.payment.manual.reference ? <>Customer says they paid. Reference: <strong dir="ltr">{o.payment.manual.reference}</strong>. Check your account, then confirm.</> : "The customer has not entered a transaction reference yet."}</p>
+              {o.state !== "cancelled" && <div className="mt-3"><ActionButton label="Mark as paid" secondary={false} confirmText="Confirm that the money has arrived in your account?" run={confirmPaymentAction.bind(null, sub, o._id)} /></div>}
+            </>
+          ) : <p className="mt-1 text-sm">Payment confirmed.{o.payment.manual.reference ? <> Reference: <strong dir="ltr">{o.payment.manual.reference}</strong>.</> : null}</p>}
+        </section>
+      )}
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <section className="card" aria-labelledby="ac">

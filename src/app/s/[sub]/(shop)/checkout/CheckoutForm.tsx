@@ -2,21 +2,22 @@
 
 import { useActionState } from "react";
 import type { CheckoutState } from "../actions";
+import type { CheckoutMethod } from "@/lib/payments/config";
 
-type Labels = Record<"contact" | "fullName" | "email" | "phone" | "address" | "city" | "notes" | "payment" | "payCard" | "payCod" | "discountCode" | "placeOrder", string>;
+type Labels = Record<"contact" | "fullName" | "email" | "phone" | "address" | "city" | "notes" | "payment" | "discountCode" | "placeOrder", string>;
 
 export default function CheckoutForm({
-  action, idem, labels, card, cod, discounts,
+  action, idem, labels, methods, discounts, prefill,
 }: {
   action: (p: CheckoutState, f: FormData) => Promise<CheckoutState>;
   idem: string;
   labels: Labels;
-  card: boolean;
-  cod: boolean;
+  methods: CheckoutMethod[];
   discounts: boolean;
+  prefill?: Record<string, string>;
 }) {
   const [state, act, pending] = useActionState<CheckoutState, FormData>(action, undefined);
-  const v = state?.values ?? {};
+  const v = state?.values ?? prefill ?? {};
   const field = (name: string, label: string, props: Record<string, string | number | boolean> = {}) => (
     <label className="field">
       <span>{label}</span>
@@ -41,16 +42,12 @@ export default function CheckoutForm({
       <fieldset className="card">
         <legend className="px-1 font-extrabold">{labels.payment}</legend>
         <div className="grid gap-2 sm:grid-cols-2">
-          {card && (
-            <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line p-3 has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50">
-              <input type="radio" name="method" value="card" defaultChecked={(v.method ?? (card ? "card" : "cod")) === "card"} /> {labels.payCard}
+          {methods.map((m) => (
+            <label key={m.id} className="flex cursor-pointer items-start gap-3 rounded-xl border border-line p-3 has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50">
+              <input className="mt-1" type="radio" name="method" value={m.id} defaultChecked={(v.method ?? methods[0]?.id) === m.id} />
+              <span>{m.label}{m.hint && <span className="block text-xs text-muted">{m.hint}</span>}</span>
             </label>
-          )}
-          {cod && (
-            <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line p-3 has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50">
-              <input type="radio" name="method" value="cod" defaultChecked={(v.method ?? (card ? "card" : "cod")) === "cod"} /> {labels.payCod}
-            </label>
-          )}
+          ))}
         </div>
         {discounts && <div className="mt-4">{field("discountCode", labels.discountCode, { autoComplete: "off", maxLength: 30, dir: "ltr" })}</div>}
       </fieldset>

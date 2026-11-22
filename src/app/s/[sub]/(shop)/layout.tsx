@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 import { loadStore } from "@/lib/commerce/load";
 import { getCartItems } from "@/lib/commerce/cart";
+import { currentCustomer } from "@/lib/commerce/customers";
 import { t } from "@/lib/i18n";
 import { Icon } from "@/components/Icons";
 import { CookieNotice } from "@/components/store/Bits";
@@ -16,6 +17,8 @@ export default async function ShopLayout({ children, params }: { children: React
   const L = store.locale;
   const name = store.settings.branding.storeName || store.instance.name;
   const items = await getCartItems(store.ctx, (await cookies()).get(`cart_${store.instance._id}`)?.value);
+  const accountsOn = store.eff.get("F-045")?.enabled !== false;
+  const me = accountsOn ? await currentCustomer(store) : null;
   const count = items.reduce((n, i) => n + i.qty, 0);
   const base = `/s/${sub}`;
   const showMaintenance = store.eff.get("F-110")?.enabled;
@@ -48,6 +51,7 @@ export default async function ShopLayout({ children, params }: { children: React
                 <button className="btn btn-secondary" lang={L === "en" ? "ur" : "en"} title={t(L, "language")}>{L === "en" ? "اردو" : "English"}</button>
               </form>
             )}
+            {accountsOn && <Link href={`${base}/account${me ? "" : "/login"}`} className="btn btn-secondary">{me ? t(L, "myAccount") : t(L, "signIn")}</Link>}
             <Link href={`${base}/cart`} className="btn btn-primary" aria-label={`${t(L, "cart")} (${count})`}>
               {Icon.cart}
               <span>{t(L, "cart")}</span>

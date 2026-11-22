@@ -34,6 +34,24 @@ export const TENANT_MIGRATIONS: Migration[] = [
   },
 ];
 
+export const _TENANT_V3: Migration = {
+  version: 3,
+  name: "customer accounts, reviews, newsletter, pages, messages",
+  async up(db) {
+    await db.collection("customers").createIndex({ instanceId: 1, email: 1 }, { unique: true });
+    await db.collection("customer_tokens").createIndex({ hash: 1 }, { unique: true });
+    await db.collection("customer_tokens").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+    await db.collection("orders").createIndex({ instanceId: 1, customerId: 1 }, { sparse: true });
+    await db.collection("reviews").createIndex({ instanceId: 1, productId: 1, createdAt: -1 });
+    await db.collection("reviews").createIndex({ instanceId: 1, productId: 1, customerId: 1 }, { unique: true });
+    await db.collection("newsletter").createIndex({ instanceId: 1, email: 1 }, { unique: true });
+    await db.collection("pages").createIndex({ instanceId: 1, slug: 1 }, { unique: true });
+    await db.collection("contact_messages").createIndex({ instanceId: 1, createdAt: -1 });
+    await db.collection("payment_config").createIndex({ instanceId: 1 });
+  },
+};
+TENANT_MIGRATIONS.push(_TENANT_V3);
+
 export const PLATFORM_MIGRATIONS: Migration[] = [
   {
     version: 1,

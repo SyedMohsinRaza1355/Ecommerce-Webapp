@@ -8,6 +8,8 @@ import { newCartId, setCartQty, clearCart, getCartItems } from "@/lib/commerce/c
 import { placeOrder, findOrderByToken, simulateGatewayOutcome, retryPayment } from "@/lib/commerce/orders";
 import { rateLimit } from "@/lib/auth/ratelimit";
 import { isLocale } from "@/lib/i18n";
+import { currentCustomer } from "@/lib/commerce/customers";
+import { startStripePayment, reportManualPayment } from "@/lib/commerce/payflow";
 
 async function okStore(sub: string) {
   const s = await loadStore(sub);
@@ -62,9 +64,9 @@ export async function placeOrderAction(sub: string, _prev: CheckoutState, form: 
   const jar = await cookies();
   const cartId = jar.get(cartCookie(s.instance._id))?.value;
   const items = await getCartItems(s.ctx, cartId);
-  const method = values.method === "cod" ? "cod" : "card";
+  const me = s.eff.get("F-045")?.enabled ? await currentCustomer(s) : null;
   const r = await placeOrder(s.ctx, s.settings, s.feat, s.settings.branding.storeName || s.instance.name, {
-    items, method, idempotencyKey: String(form.get("idem") ?? ""), discountCode: values.discountCode || undefined,
+    items, method: values.method, customerId: me?._id, idempotencyKey: String(form.get("idem") ?? ""), discountCode: values.discountCode || undefined,
     customer: { name: values.name, email: values.email, phone: values.phone, address: values.address, city: values.city, notes: values.notes },
   });
   if (!r.ok) return { error: r.error, values, field: r.code };
@@ -87,4 +89,24 @@ export async function retryPaymentAction(sub: string, token: string) {
   const o = await findOrderByToken(s.ctx, token);
   if (o && (await retryPayment(s.ctx, o._id))) redirect(`/s/${sub}/pay/${token}`);
   redirect(`/s/${sub}/order/${token}`);
+}
+
+export async function stripePayAction(sub: string, token: string) {
+  const s = await okStore(sub);
+  const o = await findOrderByToken(s.ctx, token);
+  if (!o) redirect(`/s/${sub}`);
+  if (!(await rateLimit(`stripe-pay:${s.instance._id}:${o._id}`, 10, 10 * 60_000)).ok) redirect(`/s/${sub}/order/${token}`);
+  const r = await startStripePayment(s.ctx, o._id, sub, token, s.settings.branding.storeName || s.instance.name);
+  if (!r.ok) redirect(`/s/${sub}/pay/${token}?error=${encodeURIComponent(r.error.slice(0, 160))}`);
+  redirect(r.url);
+}
+
+export async function reportPaymentAction(sub: string, token: string, _p: CartState, form: FormData): Promise<CartState> {
+  const s = await okStore(sub);
+  const o = await findOrderByToken(s.ctx, token);
+  if (!o) return { error: "Order not found." };
+  if (!(await rateLimit(`report-pay:${s.instance._id}:${o._id}`, 10, 10 * 60_000)).ok) return { error: "Too many attempts. Please wait a few minutes." };
+  const r = await reportManualPayment(s.ctx, o._id, String(form.get("reference") ?? ""));
+  revalidatePath(`/s/${sub}/pay/${token}`);
+  return r.ok ? { message: "Thank you! We will confirm your payment shortly and email you." } : { error: r.error };
 }

@@ -11,6 +11,7 @@ export type Settings = {
   shippingFlatMinor: number;
   freeShippingOverMinor: number | null;
   contactEmail: string;
+  announcement?: string;
 };
 
 export const DEFAULT_SETTINGS: Omit<Settings, "instanceId" | "branding"> & { branding: Settings["branding"] } = {
@@ -62,7 +63,19 @@ export type Order = {
   totalMinor: number;
   customer: { name: string; email: string; phone: string; address: string; city: string; notes?: string };
   state: OrderState;
-  payment: { method: "card" | "cod"; state: PaymentState; intentRef?: string; refundedMinor: number; refunds: { id: string; amountMinor: number; at: Date }[] };
+  customerId?: string;
+  payment: {
+    method: "card" | "cod" | "manual";
+    state: PaymentState;
+    /** "test" = built-in pretend gateway, "stripe" = the owner's own Stripe account */
+    provider?: "test" | "stripe";
+    intentRef?: string;
+    attempt?: number;
+    stripe?: { sessionId?: string; paymentIntent?: string };
+    manual?: { methodId: string; label: string; kind: string; accountTitle: string; accountNumber: string; instructions: string; reference?: string; reportedAt?: Date };
+    refundedMinor: number;
+    refunds: { id: string; amountMinor: number; at: Date }[];
+  };
   stockReserved: boolean;
   flags?: { refundRequired?: boolean };
   history: { at: Date; kind: "order" | "payment" | "note"; from?: string; to?: string; by: string; note?: string }[];
