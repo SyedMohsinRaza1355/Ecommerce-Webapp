@@ -12,7 +12,11 @@ export type Promo = {
   _id: string;
   instanceId?: string;
   name: string;
-  kind: "auto" | "flash";
+  kind: "auto" | "flash" | "bxgy";
+  /** buy X get Y free (F-055): the product, how many to buy, how many are free */
+  productId?: string | null;
+  buyQty?: number;
+  getQty?: number;
   percentBps: number;
   /** auto promotions: the basket must reach this subtotal */
   minSubtotalMinor: number;
@@ -24,19 +28,26 @@ export type Promo = {
   createdAt: Date;
 };
 
-export type PromoLine = { productId: string; categoryId: string | null; lineMinor: number };
+export type PromoLine = { productId: string; categoryId: string | null; lineMinor: number; qty?: number; unitMinor?: number };
 
 export type PromoResult = { promo: Pick<Promo, "_id" | "name" | "kind">; discountMinor: number } | null;
 
 const inWindow = (p: Promo, now: Date) => (!p.startsAt || p.startsAt <= now) && (!p.endsAt || p.endsAt > now);
 
 /** The single best promotion for a basket (promotions never stack with each other). */
-export function bestPromo(promos: Promo[], lines: PromoLine[], now: Date, on: { auto: boolean; flash: boolean }): PromoResult {
+export function bestPromo(promos: Promo[], lines: PromoLine[], now: Date, on: { auto: boolean; flash: boolean; bxgy?: boolean }): PromoResult {
   const subtotal = lines.reduce((n, l) => n + l.lineMinor, 0);
   let best: PromoResult = null;
   for (const p of promos) {
     if (!p.active || !inWindow(p, now)) continue;
     let base = 0;
+    if (p.kind === "bxgy") {
+      if (!on.bxgy || !p.productId || !p.buyQty || !p.getQty) continue;
+      const group = p.buyQty + p.getQty;
+      const d = Math.min(lines.filter((l) => l.productId === p.productId).reduce((n, l) => n + Math.floor((l.qty ?? 0) / group) * p.getQty! * (l.unitMinor ?? 0), 0), subtotal);
+      if (d > 0 && (!best || d > best.discountMinor)) best = { promo: { _id: p._id, name: p.name, kind: p.kind }, discountMinor: d };
+      continue;
+    }
     if (p.kind === "auto") {
       if (!on.auto || subtotal < p.minSubtotalMinor) continue;
       base = subtotal;
@@ -54,10 +65,20 @@ export async function listPromos(ctx: TenantContext): Promise<Promo[]> {
   return (await (await tenantDb(ctx)).collection<Promo>("promotions").find({ instanceId: ctx.instanceId } as never).sort({ createdAt: -1 }).limit(100).toArray()) as Promo[];
 }
 
-export async function savePromo(ctx: TenantContext, i: { name: string; kind: string; percent: string; min: string; categoryId: string; startsAt: string; endsAt: string }, currency: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function savePromo(ctx: TenantContext, i: { name: string; kind: string; percent: string; min: string; categoryId: string; startsAt: string; endsAt: string; productId?: string; buyQty?: string; getQty?: string }, currency: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const name = i.name.trim();
   if (name.length < 2 || name.length > 60) return { ok: false, error: "Give the promotion a name (2 to 60 characters)." };
-  if (i.kind !== "auto" && i.kind !== "flash") return { ok: false, error: "Choose a promotion type." };
+  if (i.kind !== "auto" && i.kind !== "flash" && i.kind !== "bxgy") return { ok: false, error: "Choose a promotion type." };
+  if (i.kind === "bxgy") {
+    const buy = Number(i.buyQty), get = Number(i.getQty);
+    if (!Number.isInteger(buy) || buy < 1 || buy > 20 || !Number.isInteger(get) || get < 1 || get > 20) return { ok: false, error: "Buy and free quantities must be whole numbers from 1 to 20." };
+    const prod = i.productId ? await (await tenantDb(ctx)).collection("products").findOne({ _id: i.productId as never, instanceId: ctx.instanceId }) : null;
+    if (!prod) return { ok: false, error: "Choose the product this offer is for." };
+    const bs = i.startsAt ? new Date(i.startsAt) : null, be = i.endsAt ? new Date(i.endsAt) : null;
+    if ((bs && Number.isNaN(+bs)) || (be && Number.isNaN(+be)) || (bs && be && be <= bs)) return { ok: false, error: "Enter valid dates; the end must be after the start." };
+    await (await tenantDb(ctx)).collection("promotions").insertOne({ _id: randomUUID() as never, instanceId: ctx.instanceId, name, kind: "bxgy", percentBps: 0, minSubtotalMinor: 0, categoryId: null, productId: i.productId, buyQty: buy, getQty: get, startsAt: bs, endsAt: be, active: true, createdAt: new Date() });
+    return { ok: true };
+  }
   const pct = parseFloat(i.percent);
   if (!Number.isFinite(pct) || pct <= 0 || pct > 90) return { ok: false, error: "Percent off must be between 1 and 90." };
   let min = 0;

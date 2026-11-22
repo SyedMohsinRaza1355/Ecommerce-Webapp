@@ -472,9 +472,9 @@ async function saveSetting(g: NonNullable<Awaited<ReturnType<typeof guardSoft>>>
 export async function promoAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
   const g = await guardSoft(sub, "promotions.manage");
   if (!g) return { error: "You do not have permission to manage promotions." };
-  const r = await savePromo(g.store.ctx, { name: fd(form, "name"), kind: fd(form, "kind"), percent: fd(form, "percent"), min: fd(form, "min"), categoryId: fd(form, "categoryId"), startsAt: fd(form, "startsAt"), endsAt: fd(form, "endsAt") }, g.store.settings.currency);
+  const r = await savePromo(g.store.ctx, { name: fd(form, "name"), kind: fd(form, "kind"), percent: fd(form, "percent"), min: fd(form, "min"), categoryId: fd(form, "categoryId"), startsAt: fd(form, "startsAt"), endsAt: fd(form, "endsAt"), productId: fd(form, "productId"), buyQty: fd(form, "buyQty"), getQty: fd(form, "getQty") }, g.store.settings.currency);
   if (!r.ok) return { error: r.error };
-  const feature = fd(form, "kind") === "flash" ? "F-056" : "F-054";
+  const feature = fd(form, "kind") === "flash" ? "F-056" : fd(form, "kind") === "bxgy" ? "F-055" : "F-054";
   const f = await setOwnerFeature(g.store.instance, g.staff.actor, feature, true, true);
   await record(g.store, g.staff, "promo.create", fd(form, "name"));
   revalidatePath(`/s/${sub}`, "layout");
@@ -750,4 +750,83 @@ export async function linksAction(sub: string, _p: AdminState, form: FormData): 
   const problems: string[] = [];
   for (const id of ["F-106", "F-104", ...(redirects.length ? ["F-090"] : [])]) { const r = await setOwnerFeature(g.store.instance, g.staff.actor, id, true, true); if (!r.ok) problems.push(r.error); }
   return problems.length ? { message: "Saved, but some parts could not be switched on:", error: problems[0] } : { message: "Saved." };
+}
+
+// ---------------- growth tools ----------------
+import { setQuoteStatus, setReturnState, receiveStock, sendTelegram, checkAddress, type Quote } from "@/lib/commerce/growth";
+import { encryptSecret } from "@/lib/crypto/secretbox";
+
+export async function quoteOpAction(sub: string, id: string, status: Quote["status"]): Promise<AdminState> {
+  const g = await guardSoft(sub, "catalog.manage");
+  if (!g) return { error: "You do not have permission to do this." };
+  await setQuoteStatus(g.store.ctx, id, status);
+  await record(g.store, g.staff, `quote.${status}`, id);
+  revalidatePath(`/s/${sub}/admin/quotes`);
+  return { message: "Done." };
+}
+
+export async function returnOpAction(sub: string, id: string, state: string): Promise<AdminState> {
+  const g = await guardSoft(sub, "catalog.manage");
+  if (!g) return { error: "You do not have permission to do this." };
+  const r = await setReturnState(g.store.ctx, id, state, "", g.store.settings.branding.storeName || g.store.instance.name);
+  if (!r.ok) return { error: r.error };
+  await record(g.store, g.staff, `return.${state}`, id);
+  revalidatePath(`/s/${sub}/admin/returns`);
+  return { message: "Done. The customer was emailed." };
+}
+
+export async function receiveAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "catalog.manage");
+  if (!g) return { error: "You do not have permission to change stock." };
+  const r = await receiveStock(g.store.ctx, fd(form, "code"), fd(form, "qty") || "1");
+  if (!r.ok) return { error: r.error };
+  await record(g.store, g.staff, "stock.receive", `${r.name} +${fd(form, "qty") || 1}`);
+  revalidatePath(`/s/${sub}`, "layout");
+  return { message: `Added to ${r.name}. Now ${r.stock} in stock.` };
+}
+
+export async function chatAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "settings.commerce");
+  if (!g) return { error: "Only the store owner can change this." };
+  const token = fd(form, "telegramToken").trim(), chat = fd(form, "telegramChat").trim();
+  const wa = fd(form, "whatsapp").replace(/[\s()+-]/g, "");
+  if (wa && !/^\d{8,15}$/.test(wa)) return { error: "Write the WhatsApp number with country code, for example 923001234567." };
+  if (chat && !/^(-?\d{1,20}|@[A-Za-z0-9_]{5,32})$/.test(chat)) return { error: "The chat id is a number like 123456789 (or @channelname)." };
+  if (token && !/^\d{6,12}:[A-Za-z0-9_-]{30,50}$/.test(token)) return { error: "That does not look like a Telegram bot token. It looks like 123456789:AAH... and comes from @BotFather." };
+  const existing = g.store.settings.telegram;
+  let telegram: { tokenEnc: string; chatId: string } | null = existing ?? null;
+  if (!chat && !token) telegram = null;
+  else if (chat && (token || existing)) telegram = { tokenEnc: token ? encryptSecret(token) : existing!.tokenEnc, chatId: chat };
+  else return { error: "Enter both the bot token and the chat id." };
+  await saveSetting(g, sub, { telegram, whatsapp: wa }, "chat");
+  const problems: string[] = [];
+  for (const id of [...(telegram ? ["F-103"] : []), ...(wa ? ["F-135"] : [])]) { const r = await setOwnerFeature(g.store.instance, g.staff.actor, id, true, true); if (!r.ok) problems.push(r.error); }
+  if (telegram && form.get("test") === "on") {
+    const t = await sendTelegram(telegram.tokenEnc, telegram.chatId, `Test from ${g.store.settings.branding.storeName || g.store.instance.name}: order alerts are working.`);
+    if (!t.ok) return { error: `Saved, but the test message failed: ${t.error} Open your bot in Telegram and press Start, then try again.` };
+    return { message: "Saved. A test message was sent to your Telegram." };
+  }
+  return problems.length ? { message: "Saved, but some parts could not be switched on:", error: problems[0] } : { message: "Saved." };
+}
+
+export async function homeAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "branding.edit");
+  if (!g) return { error: "You do not have permission to change the home page." };
+  const picks = ["s1", "s2", "s3"].map((k) => fd(form, k)).filter(Boolean);
+  const ok = new Set(["trust", "categories", "featured"]);
+  if (picks.some((x) => !ok.has(x))) return { error: "Choose from the list." };
+  if (new Set(picks).size !== picks.length) return { error: "Each block can only be used once." };
+  if (picks.length === 0) return { error: "Keep at least one block on the home page." };
+  await saveSetting(g, sub, { homeSections: picks }, "home");
+  return { message: "Saved. The home page now shows the blocks in this order." };
+}
+
+export async function domainCheckAction(sub: string): Promise<AdminState> {
+  const g = await guardSoft(sub, "settings.commerce");
+  if (!g) return { error: "Only the store owner can do this." };
+  const base = env().baseDomain;
+  const origin = `${/^(localhost|127\.)/.test(base) ? "http" : "https"}://${base}/s/${sub}`;
+  const h = await checkAddress(origin);
+  const detail = `${h.status ?? "no answer"}${h.ms !== null ? `, ${h.ms} ms` : ""}`;
+  return h.ok ? { message: `${h.note} (${detail})` } : { error: `${h.note} (${detail})` };
 }

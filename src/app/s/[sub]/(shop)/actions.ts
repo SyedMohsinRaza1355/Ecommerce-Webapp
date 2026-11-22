@@ -1,4 +1,5 @@
 "use server";
+import { recordFunnel } from "@/lib/commerce/growth";
 
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -41,6 +42,7 @@ export async function addToCartAction(sub: string, productId: string, _prev: Car
   const r = await setCartQty(s.ctx, cartId, productId, qty, "add", sel);
   revalidatePath(`/s/${sub}`, "layout");
   if (!r.ok) return { error: r.error };
+  if (s.eff.get("F-141")?.enabled === true) await recordFunnel(s.ctx, "cart");
   return { message: r.error ?? "Added to your cart." };
 }
 
@@ -197,4 +199,34 @@ export async function toggleCompareAction(sub: string, productId: string, back: 
   const next = cur.includes(productId) ? cur.filter((x) => x !== productId) : [...cur, productId].slice(-4);
   jar.set(name, next.join(","), { path: "/", maxAge: 60 * 60 * 24 * 7, sameSite: "lax" });
   redirect(back.startsWith(`/s/${sub}/`) ? back : `/s/${sub}/compare`);
+}
+
+// ---------------- growth: stock alerts, quotes, returns ----------------
+import { subscribeStockAlert, submitQuote, requestReturn } from "@/lib/commerce/growth";
+
+const ipNow = async () => ((await headers()).get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
+
+export async function stockAlertAction(sub: string, productId: string, _p: AcctState, form: FormData): Promise<AcctState> {
+  const s = await okStore(sub);
+  if (s.eff.get("F-121")?.enabled !== true) return { error: "Alerts are not available." };
+  const r = await subscribeStockAlert(s.ctx, productId, String(form.get("email") ?? ""), await ipNow());
+  return r.ok ? { message: "Done. We will email you when it is back." } : { error: r.error, values: { email: String(form.get("email") ?? "") } };
+}
+
+export async function quoteAction(sub: string, productId: string, _p: AcctState, form: FormData): Promise<AcctState> {
+  const s = await okStore(sub);
+  if (s.eff.get("F-119")?.enabled !== true) return { error: "Quote requests are not available." };
+  const v = { name: String(form.get("name") ?? ""), email: String(form.get("email") ?? ""), phone: String(form.get("phone") ?? ""), qty: String(form.get("qty") ?? ""), message: String(form.get("message") ?? "") };
+  const r = await submitQuote(s.ctx, { ...v, productId: productId || undefined, honeypot: String(form.get("website") ?? "") }, await ipNow(), s.settings.contactEmail || null, s.settings.branding.storeName || s.instance.name);
+  return r.ok ? { message: "Thank you! We will send you a price by email." } : { error: r.error, values: v };
+}
+
+export async function returnAction(sub: string, token: string, _p: AcctState, form: FormData): Promise<AcctState> {
+  const s = await okStore(sub);
+  if (s.eff.get("F-129")?.enabled !== true) return { error: "Return requests are not available." };
+  const o = await findOrderByToken(s.ctx, token);
+  if (!o) return { error: "Order not found." };
+  const r = await requestReturn(s.ctx, o, String(form.get("kind") ?? ""), String(form.get("reason") ?? ""), await ipNow(), s.settings.contactEmail || null, s.settings.branding.storeName || s.instance.name);
+  if (r.ok) revalidatePath(`/s/${sub}/order/${token}`);
+  return r.ok ? { message: "Request sent. We will email you with the decision." } : { error: r.error, values: { reason: String(form.get("reason") ?? "") } };
 }

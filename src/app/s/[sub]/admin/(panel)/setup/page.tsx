@@ -3,7 +3,7 @@ import { authorize } from "@/lib/auth/rbac";
 import { AF } from "@/components/admin/Forms";
 import { DAYS } from "@/lib/commerce/types";
 import { formatMajor, money } from "@/lib/money/money";
-import { hoursAction, zonesAction, lookAction, fulfilmentAction } from "@/app/s/[sub]/admin/actions";
+import { hoursAction, zonesAction, lookAction, fulfilmentAction, homeAction } from "@/app/s/[sub]/admin/actions";
 
 export const metadata = { title: "Store setup" };
 
@@ -55,6 +55,22 @@ export default async function SetupPage({ params }: { params: Promise<{ sub: str
             </AF>
           </>
         ) : <p className="mt-2 text-sm text-muted">Only the store owner can change delivery fees.</p>}
+      </section>
+
+      <section className="card" aria-labelledby="hs">
+        <h2 id="hs" className="text-lg font-extrabold">Home page order</h2>
+        {owner ? (
+          <AF action={homeAction.bind(null, sub)} submit="Save order" className="mt-3">
+            {(["s1", "s2", "s3"] as const).map((k, i) => {
+              const cur = (s.homeSections?.length ? s.homeSections : ["trust", "categories", "featured"])[i] ?? "";
+              return (
+                <label key={k} className="field"><span>{["First", "Second", "Third"][i]} block</span>
+                  <select className="input" name={k} defaultValue={cur}><option value="">(none)</option><option value="trust">Why shop here (delivery, secure, support)</option><option value="categories">Categories</option><option value="featured">Featured products</option></select>
+                </label>
+              );
+            })}
+          </AF>
+        ) : <p className="mt-2 text-sm text-muted">Only the store owner can change this.</p>}
       </section>
 
       <section className="card" aria-labelledby="fu">

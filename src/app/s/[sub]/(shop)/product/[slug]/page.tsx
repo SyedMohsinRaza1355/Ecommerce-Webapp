@@ -7,7 +7,9 @@ import { AddToCart } from "@/components/store/Bits";
 import { Gallery } from "@/components/store/Gallery";
 import { availableNow, describeAvailability, hasVariantStock } from "@/lib/commerce/options";
 import { fmtMoney, t } from "@/lib/i18n";
-import { addToCartAction, toggleCompareAction } from "../../actions";
+import { addToCartAction, toggleCompareAction, stockAlertAction, quoteAction } from "../../actions";
+import { previewOk, recordFunnel } from "@/lib/commerce/growth";
+import { originOf } from "@/lib/commerce/orders";
 import { cookies } from "next/headers";
 import { currentCustomer } from "@/lib/commerce/customers";
 import { listReviews, ratingSummary } from "@/lib/commerce/extras";
@@ -16,25 +18,35 @@ import { WishlistButton } from "@/components/store/WishlistButton";
 import AcctForm from "@/components/store/AcctForm";
 import { wishlistAction, reviewAction } from "../../account/actions";
 
-async function find(sub: string, slug: string) {
+async function find(sub: string, slug: string, preview?: string) {
   const s = await loadStore(sub);
   if (s.status !== "ok") return null;
-  const p = (await products.find(s.ctx, { slug, status: "published" } as never, 1))[0];
-  return p ? { s, p } : null;
+  let p = (await products.find(s.ctx, { slug, status: "published" } as never, 1))[0];
+  let isPreview = false;
+  if (!p && preview && s.eff.get("F-144")?.enabled === true) {
+    const d = (await products.find(s.ctx, { slug } as never, 1))[0];
+    if (d && previewOk(String(s.instance._id), d._id, preview)) { p = d; isPreview = true; }
+  }
+  return p ? { s, p, isPreview } : null;
 }
 
-export async function generateMetadata({ params }: { params: Promise<{ sub: string; slug: string }> }) {
+export async function generateMetadata({ params, searchParams }: { params: Promise<{ sub: string; slug: string }>; searchParams: Promise<{ preview?: string }> }) {
   const { sub, slug } = await params;
-  const r = await find(sub, slug);
+  const { preview } = await searchParams;
+  const r = await find(sub, slug, preview);
   if (!r) return { title: "Not found" };
+  if (r.isPreview) return { title: `Preview: ${r.p.name}`, robots: { index: false, follow: false } };
   return { title: r.p.seoTitle || r.p.name, alternates: { canonical: `/s/${sub}/product/${slug}` }, description: r.p.description.slice(0, 150) || r.p.name, openGraph: { title: r.p.name, images: r.p.imageUrl ? [r.p.imageUrl] : [] } };
 }
 
-export default async function ProductPage({ params }: { params: Promise<{ sub: string; slug: string }> }) {
+export default async function ProductPage({ params, searchParams }: { params: Promise<{ sub: string; slug: string }>; searchParams: Promise<{ preview?: string }> }) {
   const { sub, slug } = await params;
-  const r = await find(sub, slug);
+  const { preview } = await searchParams;
+  const r = await find(sub, slug, preview);
   if (!r) notFound();
-  const { s, p } = r;
+  const { s, p, isPreview } = r;
+  if (!isPreview && s.eff.get("F-141")?.enabled === true) await recordFunnel(s.ctx, "view");
+  const waDigits = s.eff.get("F-135")?.enabled === true ? (s.settings.whatsapp ?? "").replace(/\D/g, "") : "";
   const L = s.locale;
   const base = `/s/${sub}`;
   const reviewsOn = s.eff.get("F-009")?.enabled === true;
@@ -62,6 +74,7 @@ export default async function ProductPage({ params }: { params: Promise<{ sub: s
 
   return (
     <article className="max-md:pb-28">
+      {isPreview && <p role="status" className="mb-4 rounded-lg bg-amber-100 p-3 text-sm font-semibold text-amber-900">Draft preview: customers cannot see this product yet.</p>}
       <nav aria-label="Breadcrumb" className="mb-4 text-sm text-muted"><Link href={base} className="underline">{t(L, "home")}</Link> / <Link href={`${base}/products`} className="underline">{t(L, "shop")}</Link> / {p.name}</nav>
       <div className="grid gap-8 md:grid-cols-2">
         <div className="reveal">{images.length > 1 ? <Gallery images={images} name={p.name} /> : <ProductImage p={p} />}</div>
@@ -89,6 +102,25 @@ export default async function ProductPage({ params }: { params: Promise<{ sub: s
             </form>
           )}
           {windowText && <p className="mt-3 text-sm text-muted">Orderable: {windowText}</p>}
+          {sold && s.eff.get("F-121")?.enabled === true && (
+            <div className="card mt-4">
+              <h2 className="font-bold">Tell me when it is back</h2>
+              <div className="mt-2"><AcctForm action={stockAlertAction.bind(null, sub, p._id)} submit="Notify me" fields={[{ name: "email", label: "Your email", type: "email", required: true, autoComplete: "email" }]} /></div>
+            </div>
+          )}
+          {s.eff.get("F-119")?.enabled === true && (
+            <details className="card mt-4">
+              <summary className="cursor-pointer font-bold">Ask for a quote</summary>
+              <div className="mt-3"><AcctForm action={quoteAction.bind(null, sub, p._id)} submit="Send request" fields={[
+                { name: "name", label: "Your name", required: true, autoComplete: "name", maxLength: 80 },
+                { name: "email", label: "Email", type: "email", required: true, autoComplete: "email" },
+                { name: "phone", label: "Phone (optional)", type: "tel", autoComplete: "tel", dir: "ltr", maxLength: 30 },
+                { name: "qty", label: "How many do you need?", type: "number", dir: "ltr" },
+                { name: "message", label: "What do you need?", required: true, maxLength: 2000 },
+              ]} /></div>
+            </details>
+          )}
+          {waDigits.length >= 8 && <a className="btn btn-secondary mt-3" href={`https://wa.me/${waDigits}?text=${encodeURIComponent(`Hi, I have a question about ${p.name} ${originOf()}${base}/product/${slug}`)}`} target="_blank" rel="noopener noreferrer">Ask on WhatsApp</a>}
           <section className="mt-6 rounded-xl bg-slate-50 p-3 text-sm ring-1 ring-line" aria-label="Delivery and returns">
             <p><strong>Delivery:</strong> {s.feat.shipping ? (s.settings.shippingFlatMinor > 0 ? `from ${fmtMoney(s.settings.shippingFlatMinor, s.settings.currency, L)}` : "free") : "arranged with the shop"}{freeOver ? `, free over ${fmtMoney(freeOver, s.settings.currency, L)}` : ""}.</p>
             {s.settings.returnNote && <p className="mt-1"><strong>Returns:</strong> {s.settings.returnNote}</p>}

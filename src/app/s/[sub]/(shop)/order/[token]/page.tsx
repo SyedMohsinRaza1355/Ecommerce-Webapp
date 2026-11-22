@@ -8,7 +8,9 @@ import { OrderStepper, NEXT_TEXT } from "@/components/store/OrderStepper";
 import { currentCustomer } from "@/lib/commerce/customers";
 import { Icon } from "@/components/Icons";
 import { fmtDate, fmtMoney, t } from "@/lib/i18n";
-import { retryPaymentAction } from "../../actions";
+import { retryPaymentAction, returnAction } from "../../actions";
+import { returnForOrder } from "@/lib/commerce/growth";
+import AcctForm from "@/components/store/AcctForm";
 
 export const metadata = { title: "Your order", robots: { index: false, follow: false } };
 
@@ -35,6 +37,8 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const money = (n: number) => fmtMoney(n, o.currency, L);
   const active = !["completed", "cancelled"].includes(o.state);
   const waitingPay = ["failed", "requires_payment"].includes(o.payment.state) && o.state === "pending";
+  const rmaOn = s.eff.get("F-129")?.enabled === true;
+  const rma = rmaOn ? await returnForOrder(s.ctx, o._id) : null;
   const events = o.history.filter((h) => h.kind === "order" || h.kind === "payment");
 
   return (
@@ -86,6 +90,23 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
           {s.settings.contactEmail && <p className="mt-1 text-xs text-muted">Questions? {s.settings.contactEmail}</p>}
         </section>
       </div>
+      {rmaOn && (rma && rma.state !== "rejected" ? (
+        <section className="card mt-6" aria-labelledby="rma">
+          <h2 id="rma" className="font-extrabold">Your {rma.kind} request</h2>
+          <p className="mt-1 text-sm">Status: <strong>{({ requested: "Waiting for review", approved: "Approved: please send the items back", rejected: "Not approved", received: "Items received", refunded: "Refunded" } as Record<string, string>)[rma.state]}</strong></p>
+          {rma.note && <p className="mt-1 text-sm text-muted">{rma.note}</p>}
+        </section>
+      ) : ["fulfilled", "completed"].includes(o.state) && (
+        <details className="card mt-6">
+          <summary className="cursor-pointer font-extrabold">Return or exchange something</summary>
+          <p className="mt-2 text-sm text-muted">{rma?.state === "rejected" ? `Your last request was not approved${rma.note ? `: ${rma.note}` : ""}. You can send a new one.` : "Tell us what went wrong and we will help."}</p>
+          <div className="mt-3 max-w-md">
+            <AcctForm action={returnAction.bind(null, sub, token)} submit="Send request" fields={[{ name: "reason", label: "What is the problem?", required: true, maxLength: 1000 }]}>
+              <label className="field"><span>What would you like?</span><select className="input" name="kind" defaultValue="return"><option value="return">Return for a refund</option><option value="exchange">Exchange</option></select></label>
+            </AcctForm>
+          </div>
+        </details>
+      ))}
       {guest && (
         <div className="card mt-6 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm"><strong>Shopping here again?</strong> Create an account to see all your orders in one place and check out faster.</p>

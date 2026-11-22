@@ -1,3 +1,4 @@
+import { recordFunnel, saveCartSnapshot } from "@/lib/commerce/growth";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
@@ -20,13 +21,15 @@ export default async function CheckoutPage({ params }: { params: Promise<{ sub: 
   const L = s.locale;
   const base = `/s/${sub}`;
   const cartId = (await cookies()).get(`cart_${s.instance._id}`)?.value;
-  const v = await cartView(s.ctx, cartId, pricingConfig(s.settings, s.feat), s.feat.stockTracking, { autoPromos: s.feat.autoPromos, flashSales: s.feat.flashSales, backorders: s.feat.backorders });
+  const v = await cartView(s.ctx, cartId, pricingConfig(s.settings, s.feat), s.feat.stockTracking, { autoPromos: s.feat.autoPromos, flashSales: s.feat.flashSales, bxgy: s.feat.bxgy, backorders: s.feat.backorders });
   if (v.lines.length === 0 || v.hasProblems) redirect(`${base}/cart`);
   const money = (n: number) => fmtMoney(n, s.settings.currency, L);
   const methods = checkoutMethods(await getPaymentConfig(s.ctx), s.feat, { card: t(L, "payCard"), cod: t(L, "payCod") });
   const canPay = methods.length > 0;
   const me = s.eff.get("F-045")?.enabled ? await currentCustomer(s) : null;
   const defAddr = me?.addresses?.[0];
+  if (s.eff.get("F-141")?.enabled === true) await recordFunnel(s.ctx, "checkout");
+  if (me && cartId && s.eff.get("F-060")?.enabled === true) await saveCartSnapshot(s.ctx, me.email, cartId);
   const table = (await cookies()).get(`tbl_${s.instance._id}`)?.value;
   const ful = s.settings.fulfilment ?? {};
   const types = (s.feat.orderTypes

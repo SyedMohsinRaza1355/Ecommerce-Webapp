@@ -5,7 +5,8 @@ import { loadStore } from "@/lib/commerce/load";
 import { cartView } from "@/lib/commerce/cart";
 import { pricingConfig } from "@/lib/commerce/features";
 import { ProductImage, ProductCard } from "@/components/store/ProductCard";
-import { listPublished } from "@/lib/commerce/store";
+import { listPublished, products } from "@/lib/commerce/store";
+import { originOf } from "@/lib/commerce/orders";
 import { Icon } from "@/components/Icons";
 import { fmtMoney, t } from "@/lib/i18n";
 import { updateCartAction, setQtyAction } from "../actions";
@@ -20,7 +21,7 @@ export default async function CartPage({ params }: { params: Promise<{ sub: stri
   const L = s.locale;
   const base = `/s/${sub}`;
   const cartId = (await cookies()).get(`cart_${s.instance._id}`)?.value;
-  const v = await cartView(s.ctx, cartId, pricingConfig(s.settings, s.feat), s.feat.stockTracking, { autoPromos: s.feat.autoPromos, flashSales: s.feat.flashSales, backorders: s.feat.backorders });
+  const v = await cartView(s.ctx, cartId, pricingConfig(s.settings, s.feat), s.feat.stockTracking, { autoPromos: s.feat.autoPromos, flashSales: s.feat.flashSales, bxgy: s.feat.bxgy, backorders: s.feat.backorders });
   const money = (n: number) => fmtMoney(n, s.settings.currency, L);
 
   if (v.lines.length === 0) {
@@ -45,6 +46,13 @@ export default async function CartPage({ params }: { params: Promise<{ sub: stri
     );
   }
 
+  const inCart = new Set(v.lines.map((l) => l.product._id));
+  const catIds = [...new Set(v.lines.map((l) => l.product.categoryId).filter((x): x is string => Boolean(x)))];
+  const upsell = s.eff.get("F-134")?.enabled === true
+    ? (await products.find(s.ctx, { status: "published", _id: { $nin: [...inCart] }, ...(catIds.length ? { categoryId: { $in: catIds } } : {}) } as never, 4))
+    : [];
+  const waDigits = s.eff.get("F-135")?.enabled === true ? (s.settings.whatsapp ?? "").replace(/\D/g, "") : "";
+  const waText = `Hi, I would like to order: ${v.lines.map((l) => `${l.qty} x ${l.product.name}${l.label ? ` (${l.label})` : ""}`).join(", ")}. Total ${money(v.totals.totalMinor)}. ${originOf()}${base}`;
   const free = s.feat.freeShipping && s.settings.freeShippingOverMinor ? s.settings.freeShippingOverMinor : null;
   const remaining = free ? Math.max(free - (v.totals.subtotalMinor - v.totals.discountMinor), 0) : 0;
   return (
@@ -91,6 +99,15 @@ export default async function CartPage({ params }: { params: Promise<{ sub: stri
           <Link href={`${base}/products`} className="mt-2 block text-center text-sm underline">{t(L, "continueShopping")}</Link>
         </aside>
       </div>
+      {waDigits.length >= 8 && <p className="mt-4 text-center"><a className="btn btn-secondary" href={`https://wa.me/${waDigits}?text=${encodeURIComponent(waText.slice(0, 1500))}`} target="_blank" rel="noopener noreferrer">Send my cart on WhatsApp</a></p>}
+      {upsell.length > 0 && (
+        <section className="mt-10" aria-labelledby="ups">
+          <h2 id="ups" className="text-xl font-extrabold">Goes well with your order</h2>
+          <ul className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {upsell.map((p, i) => <ProductCard key={p._id} p={p} base={base} currency={s.settings.currency} locale={L} trackStock={s.feat.stockTracking} backorders={s.feat.backorders} delay={i} />)}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

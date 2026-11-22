@@ -12,6 +12,12 @@ export type Settings = {
   freeShippingOverMinor: number | null;
   contactEmail: string;
   announcement?: string;
+  /** shop WhatsApp number, digits (F-135) */
+  whatsapp?: string;
+  /** order of the home page blocks (F-083) */
+  homeSections?: ("trust" | "categories" | "featured")[];
+  /** the shop's Telegram alert bot (F-103); the token is stored encrypted */
+  telegram?: { tokenEnc: string; chatId: string };
   /** old address -> new address (F-090) */
   redirects?: { from: string; to: string }[];
   /** bumped to invalidate the live spreadsheet links (F-104) */

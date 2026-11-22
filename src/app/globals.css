@@ -195,3 +195,7 @@ body {
 .btn.hidden { display: none; }
 @media (min-width: 640px) { .btn.sm\:inline-flex { display: inline-flex; } }
 @media (min-width: 768px) { .btn.md\:inline-flex { display: inline-flex; } }
+
+/* Dark mode (F-077): flip the page, then flip pictures back so they keep their real colours. */
+html[data-theme="dark"] { filter: invert(.92) hue-rotate(180deg); background: #fff; }
+html[data-theme="dark"] img, html[data-theme="dark"] video, html[data-theme="dark"] canvas, html[data-theme="dark"] .ph, html[data-theme="dark"] .hero-bg { filter: invert(1) hue-rotate(180deg); }

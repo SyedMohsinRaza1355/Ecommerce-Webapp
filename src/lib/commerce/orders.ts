@@ -41,7 +41,7 @@ export async function trackUrlFor(ctx: TenantContext, token: string): Promise<st
   return `${await storeUrlFor(ctx)}/order/${token}`;
 }
 
-export type Features = { shipping: boolean; freeShipping: boolean; tax: boolean; discounts: boolean; cod: boolean; card: boolean; emails: boolean; stockTracking: boolean; manualBank?: boolean; wallet?: boolean; orderTypes?: boolean; pickup?: boolean; tableQr?: boolean; scheduled?: boolean; throttle?: boolean; lowStock?: boolean; maintenance?: boolean; autoPromos?: boolean; flashSales?: boolean; couponLimits?: boolean; backorders?: boolean; hours?: boolean; zones?: boolean };
+export type Features = { shipping: boolean; freeShipping: boolean; tax: boolean; discounts: boolean; cod: boolean; card: boolean; emails: boolean; stockTracking: boolean; manualBank?: boolean; wallet?: boolean; orderTypes?: boolean; pickup?: boolean; tableQr?: boolean; scheduled?: boolean; throttle?: boolean; lowStock?: boolean; maintenance?: boolean; autoPromos?: boolean; flashSales?: boolean; bxgy?: boolean; chat?: boolean; couponLimits?: boolean; backorders?: boolean; hours?: boolean; zones?: boolean };
 
 export type PlaceInput = {
   items: { productId: string; qty: number; sel?: string[] }[];
@@ -163,8 +163,8 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
 
   // automatic promotion (F-054, F-056): used only when it beats the code; the code is then not consumed
   const subtotalNow = lines.reduce((n, l) => n + l.unitMinor * l.qty, 0);
-  const promo = feat.autoPromos || feat.flashSales
-    ? bestPromo(await listPromos(ctx), prep.lines.map((l) => ({ productId: l.productId, categoryId: l.categoryId, lineMinor: l.unitMinor * l.qty })), input.now ?? new Date(), { auto: !!feat.autoPromos, flash: !!feat.flashSales })
+  const promo = feat.autoPromos || feat.flashSales || feat.bxgy
+    ? bestPromo(await listPromos(ctx), prep.lines.map((l) => ({ productId: l.productId, categoryId: l.categoryId, lineMinor: l.unitMinor * l.qty, qty: l.qty, unitMinor: l.unitMinor })), input.now ?? new Date(), { auto: !!feat.autoPromos, flash: !!feat.flashSales, bxgy: !!feat.bxgy })
     : null;
   let fixedDiscount = 0;
   if (promo && promo.discountMinor > Math.round((subtotalNow * discountBps) / 10000)) { fixedDiscount = promo.discountMinor; discountBps = 0; code = undefined; }
@@ -238,6 +238,7 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
     await processOutbox(ctx).catch(() => undefined);
   }
   await emitWebhook(ctx, "order.created", order);
+  if (feat.chat) await import("./growth").then((m) => m.notifyOrderChat(ctx, order, storeName)).catch(() => undefined);
   return { ok: true, orderId: id, orderNo, trackingToken, needsPayment: input.method !== "cod" };
 }
 
@@ -272,8 +273,8 @@ export async function placeStaffOrder(ctx: TenantContext, settings: Settings, fe
   const prep = await prepareLines(ctx, input.items, { stockTracking: feat.stockTracking, backorders: feat.backorders, timeWindows: true });
   if (!prep.ok) return { ok: false, error: prep.error };
   const lines: Line[] = prep.lines.map((l) => ({ productId: l.productId, name: l.name, unitMinor: l.unitMinor, qty: l.qty }));
-  const promo = feat.autoPromos || feat.flashSales
-    ? bestPromo(await listPromos(ctx), prep.lines.map((l) => ({ productId: l.productId, categoryId: l.categoryId, lineMinor: l.unitMinor * l.qty })), new Date(), { auto: !!feat.autoPromos, flash: !!feat.flashSales })
+  const promo = feat.autoPromos || feat.flashSales || feat.bxgy
+    ? bestPromo(await listPromos(ctx), prep.lines.map((l) => ({ productId: l.productId, categoryId: l.categoryId, lineMinor: l.unitMinor * l.qty, qty: l.qty, unitMinor: l.unitMinor })), new Date(), { auto: !!feat.autoPromos, flash: !!feat.flashSales, bxgy: !!feat.bxgy })
     : null;
   const subtotal = lines.reduce((n, l) => n + l.unitMinor * l.qty, 0);
   const manualBps = Math.round((input.discountPercent ?? 0) * 100);

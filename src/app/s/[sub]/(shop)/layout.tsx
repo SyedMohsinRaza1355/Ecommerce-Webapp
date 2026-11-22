@@ -11,6 +11,7 @@ import { RegisterSW } from "@/components/store/RegisterSW";
 import { ToastHost } from "@/components/store/Toast";
 import { SearchBox } from "@/components/store/SearchBox";
 import { setLocaleAction, newsletterAction } from "./actions";
+import { ThemeToggle } from "@/components/store/ThemeToggle";
 import { listPages } from "@/lib/commerce/extras";
 import { hasHours, isOpenNow } from "@/lib/commerce/rules";
 import AcctForm from "@/components/store/AcctForm";
@@ -52,6 +53,7 @@ export default async function ShopLayout({ children, params }: { children: React
           <SearchBox action={`${base}/products`} suggestUrl={`${base}/suggest`} label={t(L, "search")} placeholder={t(L, "searchPlaceholder")} button={<>{Icon.search}<span className="max-sm:sr-only">{t(L, "search")}</span></>} />
           <nav className="ms-auto flex items-center gap-2" aria-label="Main">
             <Link href={`${base}/products`} className="btn btn-secondary hidden sm:inline-flex">{t(L, "shop")}</Link>
+            {store.eff.get("F-077")?.enabled === true && <ThemeToggle />}
             {bilingual && (
               <form action={setLocaleAction.bind(null, sub)}>
                 <input type="hidden" name="locale" value={L === "en" ? "ur" : "en"} />

@@ -7,6 +7,7 @@ import { Icon } from "@/components/Icons";
 import { PACK_BY_ID } from "@/catalog/packs";
 import { t } from "@/lib/i18n";
 import HeroSlider from "@/components/store/HeroSlider";
+import { Fragment } from "react";
 
 export default async function StoreHome({ params }: { params: Promise<{ sub: string }> }) {
   const { sub } = await params;
@@ -19,20 +20,7 @@ export default async function StoreHome({ params }: { params: Promise<{ sub: str
   const pack = s.instance.industryPack ? PACK_BY_ID.get(s.instance.industryPack) : undefined;
   const slider = s.eff.get("F-084")?.enabled;
 
-  return (
-    <div>
-      {slider !== false && (s.settings.hero?.length ?? 0) > 0 && <HeroSlider slides={s.settings.hero!} cta={t(L, "shop")} />}
-      {slider !== false && !(s.settings.hero?.length) && (
-        <section className="hero-bg -mx-4 -mt-8 mb-10 rounded-b-3xl sm:mx-0 sm:mt-0 sm:rounded-3xl" aria-labelledby="hero-h">
-          <div className="hero-grid" aria-hidden="true" />
-          <div className="relative px-6 py-14 text-center sm:py-20">
-            <h1 id="hero-h" className="reveal text-4xl font-extrabold tracking-tight sm:text-5xl">{name}</h1>
-            <p className="reveal reveal-1 mx-auto mt-3 max-w-xl text-lg text-slate-200 urdu-line">{s.settings.branding.tagline || pack?.name}</p>
-            <Link href={`${base}/products`} className="btn btn-primary reveal reveal-2 mt-7">{t(L, "shop")}</Link>
-          </div>
-        </section>
-      )}
-
+  const trust = (
       <ul className="trust-strip" aria-label="Why shop here">
         {([["truck", "trust1", "trust1d"], ["lock", "trust2", "trust2d"], ["shield", "trust3", "trust3d"]] as const).map(([ic, k, d]) => (
           <li key={k} className="card flex items-start gap-3 p-4">
@@ -41,8 +29,9 @@ export default async function StoreHome({ params }: { params: Promise<{ sub: str
           </li>
         ))}
       </ul>
+  );
+  const catBlock = (
 
-      {cats.length > 0 && (
         <section aria-labelledby="cats-h" className="mb-10">
           <h2 id="cats-h" className="text-2xl font-extrabold">{t(L, "categories")}</h2>
           <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
@@ -56,8 +45,8 @@ export default async function StoreHome({ params }: { params: Promise<{ sub: str
             ))}
           </ul>
         </section>
-      )}
-
+  );
+  const feat = (
       <section aria-labelledby="feat-h">
         <div className="flex items-baseline justify-between">
           <h2 id="feat-h" className="text-2xl font-extrabold">{t(L, "featured")}</h2>
@@ -73,6 +62,25 @@ export default async function StoreHome({ params }: { params: Promise<{ sub: str
           </ul>
         )}
       </section>
+  );
+  const blocks = { trust, categories: cats.length > 0 ? catBlock : null, featured: feat };
+  const order = s.eff.get("F-083")?.enabled !== false && s.settings.homeSections?.length ? s.settings.homeSections : (["trust", "categories", "featured"] as const);
+
+  return (
+    <div>
+      {slider !== false && (s.settings.hero?.length ?? 0) > 0 && <HeroSlider slides={s.settings.hero!} cta={t(L, "shop")} />}
+      {slider !== false && !(s.settings.hero?.length) && (
+        <section className="hero-bg -mx-4 -mt-8 mb-10 rounded-b-3xl sm:mx-0 sm:mt-0 sm:rounded-3xl" aria-labelledby="hero-h">
+          <div className="hero-grid" aria-hidden="true" />
+          <div className="relative px-6 py-14 text-center sm:py-20">
+            <h1 id="hero-h" className="reveal text-4xl font-extrabold tracking-tight sm:text-5xl">{name}</h1>
+            <p className="reveal reveal-1 mx-auto mt-3 max-w-xl text-lg text-slate-200 urdu-line">{s.settings.branding.tagline || pack?.name}</p>
+            <Link href={`${base}/products`} className="btn btn-primary reveal reveal-2 mt-7">{t(L, "shop")}</Link>
+          </div>
+        </section>
+      )}
+
+      {order.map((k) => <Fragment key={k}>{blocks[k]}</Fragment>)}
     </div>
   );
 }

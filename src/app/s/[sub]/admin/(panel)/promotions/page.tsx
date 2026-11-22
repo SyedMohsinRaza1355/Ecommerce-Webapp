@@ -1,6 +1,6 @@
 import { guard } from "@/lib/commerce/guard";
 import { listPromos } from "@/lib/commerce/rules";
-import { categories } from "@/lib/commerce/store";
+import { categories, listPublished } from "@/lib/commerce/store";
 import { fmtDate, fmtMoney } from "@/lib/i18n";
 import { AF, ActionButton } from "@/components/admin/Forms";
 import { promoAction, promoOpAction } from "@/app/s/[sub]/admin/actions";
@@ -10,7 +10,8 @@ export const metadata = { title: "Promotions" };
 export default async function PromotionsPage({ params }: { params: Promise<{ sub: string }> }) {
   const { sub } = await params;
   const { store } = await guard(sub, "promotions.manage");
-  const [promos, cats] = await Promise.all([listPromos(store.ctx), categories.find(store.ctx, {}, 100)]);
+  const [promos, cats, prods] = await Promise.all([listPromos(store.ctx), categories.find(store.ctx, {}, 100), listPublished(store.ctx, { pageSize: 100 })]);
+  const prodName = new Map(prods.items.map((p) => [p._id, p.name]));
   const catName = new Map(cats.map((c) => [c._id, c.name]));
   const cur = store.settings.currency;
   return (
@@ -26,14 +27,18 @@ export default async function PromotionsPage({ params }: { params: Promise<{ sub
           <div className="grid gap-x-4 sm:grid-cols-2">
             <label className="field"><span>Name shown to customers</span><input className="input" name="name" required maxLength={60} placeholder="Weekend sale" /></label>
             <label className="field"><span>Type</span>
-              <select className="input" name="kind" defaultValue="flash"><option value="flash">Flash sale (limited time, whole store or one category)</option><option value="auto">Basket discount (when the basket reaches an amount)</option></select>
+              <select className="input" name="kind" defaultValue="flash"><option value="flash">Flash sale (limited time, whole store or one category)</option><option value="auto">Basket discount (when the basket reaches an amount)</option><option value="bxgy">Buy some, get some free (one product)</option></select>
             </label>
             <label className="field"><span>Percent off</span><input className="input" name="percent" inputMode="decimal" required placeholder="15" dir="ltr" /></label>
             <label className="field"><span>Basket discount: minimum basket ({cur})</span><input className="input" name="min" inputMode="decimal" placeholder="2000" dir="ltr" /></label>
             <label className="field"><span>Flash sale: only this category</span>
               <select className="input" name="categoryId" defaultValue=""><option value="">Whole store</option>{cats.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}</select>
             </label>
-            <span />
+            <label className="field"><span>Buy and get: product</span>
+              <select className="input" name="productId" defaultValue=""><option value="">Choose a product</option>{prods.items.map((p) => <option key={p._id} value={p._id}>{p.name}</option>)}</select>
+            </label>
+            <label className="field"><span>Buy this many</span><input className="input" name="buyQty" inputMode="numeric" placeholder="2" dir="ltr" /></label>
+            <label className="field"><span>and get this many free</span><input className="input" name="getQty" inputMode="numeric" placeholder="1" dir="ltr" /></label>
             <label className="field"><span>Starts (optional)</span><input className="input" type="datetime-local" name="startsAt" /></label>
             <label className="field"><span>Ends (needed for flash sales)</span><input className="input" type="datetime-local" name="endsAt" /></label>
           </div>
@@ -50,8 +55,8 @@ export default async function PromotionsPage({ params }: { params: Promise<{ sub
               const live = p.active && (!p.startsAt || p.startsAt <= now) && (!p.endsAt || p.endsAt > now);
               return (
                 <tr key={p._id}>
-                  <td className="font-semibold">{p.name}<p className="text-xs font-normal text-muted">{p.kind === "flash" ? `Flash sale${p.categoryId ? `: ${catName.get(p.categoryId) ?? "category"}` : ": whole store"}` : `Basket over ${fmtMoney(p.minSubtotalMinor, cur, "en")}`}</p></td>
-                  <td>{p.percentBps / 100}%</td>
+                  <td className="font-semibold">{p.name}<p className="text-xs font-normal text-muted">{p.kind === "bxgy" ? `Buy ${p.buyQty} get ${p.getQty} free: ${prodName.get(p.productId ?? "") ?? "product"}` : p.kind === "flash" ? `Flash sale${p.categoryId ? `: ${catName.get(p.categoryId) ?? "category"}` : ": whole store"}` : `Basket over ${fmtMoney(p.minSubtotalMinor, cur, "en")}`}</p></td>
+                  <td>{p.kind === "bxgy" ? "Free items" : `${p.percentBps / 100}%`}</td>
                   <td className="text-xs">{p.startsAt ? fmtDate(p.startsAt, "en") : "Now"} to {p.endsAt ? fmtDate(p.endsAt, "en") : "no end"}</td>
                   <td><span className={`badge ${live ? "badge-green" : "badge-slate"}`}>{live ? "Running" : p.active ? "Scheduled or ended" : "Off"}</span></td>
                   <td className="text-end"><span className="flex justify-end gap-2">

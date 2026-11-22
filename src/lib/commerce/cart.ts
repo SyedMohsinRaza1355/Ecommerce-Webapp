@@ -78,7 +78,7 @@ export async function clearCart(ctx: TenantContext, cartId: string | undefined) 
 export type CartLine = { key: string; product: Product; qty: number; sel: string[]; label: string; unitMinor: number; lineMinor: number; problem?: string };
 
 /** Joins live product data; unpublished, unavailable or sold-out items are flagged, prices always come from the database. */
-export async function cartView(ctx: TenantContext, cartId: string | undefined, cfg: PricingConfig, trackStock: boolean, opts: { autoPromos?: boolean; flashSales?: boolean; backorders?: boolean; now?: Date } = {}) {
+export async function cartView(ctx: TenantContext, cartId: string | undefined, cfg: PricingConfig, trackStock: boolean, opts: { autoPromos?: boolean; flashSales?: boolean; bxgy?: boolean; backorders?: boolean; now?: Date } = {}) {
   const items = await getCartItems(ctx, cartId);
   const db = await tenantDb(ctx);
   const ids = [...new Set(items.map((i) => i.productId))];
@@ -100,8 +100,8 @@ export async function cartView(ctx: TenantContext, cartId: string | undefined, c
     lines.push({ key: lineKey(p._id, r.ok ? r.sel : []), product: p, qty: i.qty, sel: r.ok ? r.sel : [], label: r.ok ? r.label : "", unitMinor: unit, lineMinor: unit * i.qty, problem });
   }
   const good = lines.filter((l) => !l.problem);
-  const promo: PromoResult = opts.autoPromos || opts.flashSales
-    ? bestPromo(await listPromos(ctx), good.map((l) => ({ productId: l.product._id, categoryId: l.product.categoryId ?? null, lineMinor: l.lineMinor })), opts.now ?? new Date(), { auto: !!opts.autoPromos, flash: !!opts.flashSales })
+  const promo: PromoResult = opts.autoPromos || opts.flashSales || opts.bxgy
+    ? bestPromo(await listPromos(ctx), good.map((l) => ({ productId: l.product._id, categoryId: l.product.categoryId ?? null, lineMinor: l.lineMinor, qty: l.qty, unitMinor: l.unitMinor })), opts.now ?? new Date(), { auto: !!opts.autoPromos, flash: !!opts.flashSales, bxgy: !!opts.bxgy })
     : null;
   const totals: Totals = computeTotals(good.map((l) => ({ productId: l.product._id, name: l.product.name, unitMinor: l.unitMinor, qty: l.qty })), { ...cfg, fixedDiscountMinor: promo?.discountMinor ?? 0 });
   return { lines, totals, promo, count: lines.reduce((n, l) => n + l.qty, 0), hasProblems: lines.some((l) => l.problem) };
