@@ -4,10 +4,12 @@ import { notFound } from "next/navigation";
 import { loadStore } from "@/lib/commerce/load";
 import { cartView } from "@/lib/commerce/cart";
 import { pricingConfig } from "@/lib/commerce/features";
-import { ProductImage } from "@/components/store/ProductCard";
+import { ProductImage, ProductCard } from "@/components/store/ProductCard";
+import { listPublished } from "@/lib/commerce/store";
 import { Icon } from "@/components/Icons";
 import { fmtMoney, t } from "@/lib/i18n";
-import { updateCartAction } from "../actions";
+import { updateCartAction, setQtyAction } from "../actions";
+import { QtyStepper } from "@/components/store/QtyStepper";
 
 export const metadata = { title: "Cart" };
 
@@ -22,12 +24,23 @@ export default async function CartPage({ params }: { params: Promise<{ sub: stri
   const money = (n: number) => fmtMoney(n, s.settings.currency, L);
 
   if (v.lines.length === 0) {
+    const suggestions = (await listPublished(s.ctx, { pageSize: 4 })).items;
     return (
+      <div>
       <div className="card pop-in mx-auto max-w-md text-center">
         <span className="icon-chip mx-auto">{Icon.cart}</span>
         <h1 className="mt-4 text-xl font-extrabold">{t(L, "emptyCart")}</h1>
         <p className="mt-1 text-muted">{t(L, "emptyCartHint")}</p>
         <Link href={`${base}/products`} className="btn btn-primary mt-5">{t(L, "continueShopping")}</Link>
+      </div>
+      {suggestions.length > 0 && (
+        <section className="mt-10" aria-labelledby="sug">
+          <h2 id="sug" className="text-xl font-extrabold">{t(L, "featured")}</h2>
+          <ul className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {suggestions.map((p, i) => <ProductCard key={p._id} p={p} base={base} currency={s.settings.currency} locale={L} trackStock={s.feat.stockTracking} backorders={s.feat.backorders} delay={i} />)}
+          </ul>
+        </section>
+      )}
       </div>
     );
   }
@@ -52,16 +65,11 @@ export default async function CartPage({ params }: { params: Promise<{ sub: stri
                 <Link href={`${base}/product/${l.product.slug}`} className="font-bold hover:underline">{l.product.name}</Link>
                 <p className="text-sm text-muted">{money(l.product.priceMinor)}</p>
                 {l.problem && <p role="alert" className="err">{l.problem === "lowstock" ? `Only ${l.product.stock} left. Lower the quantity.` : "No longer available. Remove it to continue."}</p>}
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <form action={updateCartAction.bind(null, sub, l.product._id)} className="flex items-center gap-2">
-                    <label className="sr-only" htmlFor={`q-${l.product._id}`}>{t(L, "quantity")}</label>
-                    <input id={`q-${l.product._id}`} className="input w-20" type="number" name="qty" min={1} max={99} defaultValue={l.qty} />
-                    <input type="hidden" name="act" value="set" />
-                    <button className="btn btn-secondary">{t(L, "apply")}</button>
-                  </form>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <QtyStepper qty={l.qty} name={l.product.name} removeLabel={t(L, "remove")} max={s.feat.stockTracking && l.product.trackStock && !(s.feat.backorders && l.product.backorder) ? l.product.stock : 99} update={setQtyAction.bind(null, sub, l.product._id)} />
                   <form action={updateCartAction.bind(null, sub, l.product._id)}>
                     <input type="hidden" name="act" value="remove" />
-                    <button className="btn btn-secondary">{t(L, "remove")}</button>
+                    <button className="text-sm underline">{t(L, "remove")}</button>
                   </form>
                 </div>
               </div>

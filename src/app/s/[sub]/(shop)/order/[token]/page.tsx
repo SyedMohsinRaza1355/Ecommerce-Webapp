@@ -4,6 +4,8 @@ import { loadStore } from "@/lib/commerce/load";
 import { findOrderByToken } from "@/lib/commerce/orders";
 import { reconcileStripePayment } from "@/lib/commerce/payflow";
 import { LiveRefresh } from "@/components/store/Bits";
+import { OrderStepper, NEXT_TEXT } from "@/components/store/OrderStepper";
+import { currentCustomer } from "@/lib/commerce/customers";
 import { Icon } from "@/components/Icons";
 import { fmtDate, fmtMoney, t } from "@/lib/i18n";
 import { retryPaymentAction } from "../../actions";
@@ -29,6 +31,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
     o = (await findOrderByToken(s.ctx, token)) ?? o;
   }
   const L = s.locale;
+  const guest = s.eff.get("F-045")?.enabled !== false && !(await currentCustomer(s));
   const money = (n: number) => fmtMoney(n, o.currency, L);
   const active = !["completed", "cancelled"].includes(o.state);
   const waitingPay = ["failed", "requires_payment"].includes(o.payment.state) && o.state === "pending";
@@ -47,6 +50,8 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             {o.payment.method === "cod" ? t(L, "payCod") : o.payment.method === "manual" && o.payment.state === "requires_payment" ? (o.payment.manual?.reference ? "Payment being checked" : "Waiting for your payment") : o.payment.state === "captured" ? t(L, "paymentReceived") : o.payment.state === "failed" ? t(L, "paymentFailed") : o.payment.state.startsWith("refund") || o.payment.state === "partially_refunded" ? "Refunded" : t(L, "awaitingPayment")}
           </span>
         </p>
+        {o.state !== "cancelled" && <OrderStepper state={o.state} />}
+        <p className="mx-auto mt-4 max-w-md text-sm text-muted">{NEXT_TEXT[o.state] ?? ""}</p>
         {o.payment.state === "failed" && o.state === "pending" && (
           <form action={retryPaymentAction.bind(null, sub, token)} className="mt-4"><button className="btn btn-primary">{t(L, "tryAgain")}</button></form>
         )}
@@ -81,7 +86,13 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
           {s.settings.contactEmail && <p className="mt-1 text-xs text-muted">Questions? {s.settings.contactEmail}</p>}
         </section>
       </div>
-      <p className="mt-6 text-center"><Link href={`/s/${sub}`} className="btn btn-secondary">{t(L, "continueShopping")}</Link></p>
+      {guest && (
+        <div className="card mt-6 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm"><strong>Shopping here again?</strong> Create an account to see all your orders in one place and check out faster.</p>
+          <Link href={`/s/${sub}/account/register?next=${encodeURIComponent(`/s/${sub}/account`)}`} className="btn btn-secondary">{t(L, "createAccount")}</Link>
+        </div>
+      )}
+      <p className="mt-6 flex flex-wrap justify-center gap-2"><Link href={`/s/${sub}`} className="btn btn-secondary">{t(L, "continueShopping")}</Link>{s.settings.contactEmail && <a href={`mailto:${s.settings.contactEmail}?subject=${encodeURIComponent(`Order #${o.orderNo}`)}`} className="btn btn-secondary">Contact the shop</a>}</p>
     </div>
   );
 }

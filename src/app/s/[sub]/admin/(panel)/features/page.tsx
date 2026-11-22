@@ -14,14 +14,16 @@ const LABEL: Record<string, string> = {
   marketing: "Marketing", shipping: "Shipping", content: "Content and branding", domains: "Domains and search", reporting: "Reporting and integrations", operations: "Operations",
 };
 
-export default async function FeaturesPage({ params, searchParams }: { params: Promise<{ sub: string }>; searchParams: Promise<{ q?: string; adv?: string }> }) {
+export default async function FeaturesPage({ params, searchParams }: { params: Promise<{ sub: string }>; searchParams: Promise<{ q?: string; adv?: string; all?: string }> }) {
   const { sub } = await params;
   const sp = await searchParams;
   const { store } = await guard(sub, "toggle.enable");
   const [states, changes] = await Promise.all([featureStates(store.instance), recentChanges(store.ctx)]);
   const q = (sp.q ?? "").toLowerCase();
   const showAdv = sp.adv === "1";
-  const rows = states.filter((s) => (showAdv || !s.def.advanced) && (!q || s.def.name.toLowerCase().includes(q) || s.def.id.toLowerCase().includes(q)));
+  const showAll = sp.all === "1"; // by default owners only see features that really work
+  const rows = states.filter((s) => (showAdv || !s.def.advanced) && (showAll || IMPLEMENTED.has(s.def.id)) && (!q || s.def.name.toLowerCase().includes(q) || s.def.id.toLowerCase().includes(q)));
+  const builtCount = states.filter((s) => IMPLEMENTED.has(s.def.id)).length;
   const sections = Array.from(new Set(rows.map((r) => r.def.section)));
   const on = states.filter((s) => s.effective.enabled).length;
 
@@ -45,9 +47,21 @@ export default async function FeaturesPage({ params, searchParams }: { params: P
         </section>
       )}
 
+      <p className="mt-4 flex flex-wrap gap-2 text-sm" aria-label="Summary">
+        <span className="badge badge-green">{on} switched on</span>
+        <span className="badge badge-indigo">{builtCount} ready to use</span>
+        <span className="badge badge-slate">{states.length - builtCount} coming soon</span>
+      </p>
+      {sections.length > 1 && (
+        <nav className="mt-3 flex flex-wrap gap-2" aria-label="Jump to a section">
+          {sections.map((sec) => <a key={sec} href={`#s-${sec}`} className="badge badge-slate px-3 py-1.5 text-sm">{LABEL[sec] ?? sec}</a>)}
+        </nav>
+      )}
+
       <form method="get" className="card mt-5 flex flex-wrap items-end gap-3">
         <label className="field mb-0"><span>Search features</span><input className="input" name="q" defaultValue={sp.q ?? ""} placeholder="variants, refunds, F-014" /></label>
         <label className="mb-1 flex items-center gap-2 text-sm"><input type="checkbox" name="adv" value="1" defaultChecked={showAdv} /> Show advanced capabilities</label>
+        <label className="mb-1 flex items-center gap-2 text-sm"><input type="checkbox" name="all" value="1" defaultChecked={showAll} /> Also show features that are coming soon</label>
         <button className="btn btn-secondary">Apply</button>
       </form>
 

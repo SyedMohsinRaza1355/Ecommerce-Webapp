@@ -80,6 +80,7 @@ export default async function ShopLayout({ children, params }: { children: React
           <p className="flex flex-wrap gap-4">
             {footerPages.map((p) => <Link key={p._id} href={`${base}/p/${p.slug}`} className="underline">{p.title}</Link>)}
             {blogOn && <Link href={`${base}/blog`} className="underline">Blog</Link>}
+            <Link href={`${base}/track`} className="underline">Track order</Link>
             {contactOn && <Link href={`${base}/contact`} className="underline">Contact</Link>}
             <Link href="/privacy" className="underline">{t(L, "privacy")}</Link>
             <Link href="/terms" className="underline">{t(L, "terms")}</Link>

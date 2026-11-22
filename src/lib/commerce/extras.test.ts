@@ -4,10 +4,10 @@ import { provisionInstance } from "@/lib/platform/provision";
 import { issueTenantContext, dbNameFor, type TenantContext } from "@/lib/tenant/context";
 import { tenantDb } from "@/lib/tenant/schema";
 import { createProduct, getSettings, ProductInput, products } from "./store";
-import { placeOrder, orders, type Features } from "./orders";
+import { placeOrder, orders, lookupOrderToken, findOrderByToken, type Features } from "./orders";
 import {
   csvCell, toCsv, parseCsv, exportCsv, importProductsCsv, savePage, listPages, getPageBySlug, deletePage, subscribeNewsletter, saveContactMessage,
-  ratingSummary, listReviews, setReviewStatus, productReport, customerReport, taxReport, buildBackup, lowStockItems, salesByDay,
+  ratingSummary, listReviews, setReviewStatus, productReport, customerReport, taxReport, buildBackup, lowStockItems, salesByDay, attentionCounts,
 } from "./extras";
 import type { Actor } from "@/lib/auth/rbac";
 
@@ -246,6 +246,41 @@ describe.skipIf(!HAS_DB)("store features (Atlas, synthetic tenants)", () => {
       expect((await salesByDay(A, 7, new Date(Date.now() + 40 * 86_400_000))).every((d) => d.totalMinor === 0)).toBe(true); // a window that does not include today
       const b = await salesByDay(B, 7);
       expect(b.reduce((n, d) => n + d.totalMinor, 0)).toBeLessThan(today.totalMinor);
+    });
+    it("guests find an order only with the right number AND email; everything else looks the same", async () => {
+      const o = (await orders.find(A, { "customer.email": cust.email } as never, 1))[0];
+      const tok = await lookupOrderToken(A, String(o.orderNo), " Ayesha@Example.com ", "5.5.5.1");
+      expect(tok).toBeTruthy();
+      expect((await findOrderByToken(A, tok!))!._id).toBe(o._id);
+      expect(await lookupOrderToken(A, `#${o.orderNo}`, cust.email, "5.5.5.1")).toBe(tok); // the # is tolerated
+      for (const [no, em] of [[String(o.orderNo), "wrong@example.com"], ["999999", cust.email], ["abc", cust.email], ["", ""], [String(o.orderNo), "not-an-email"]]) expect(await lookupOrderToken(A, no, em, "5.5.5.2"), `${no}/${em}`).toBeNull();
+      const other = await lookupOrderToken(B, String(o.orderNo), cust.email, "5.5.5.3"); // store B has its own order with this number and email
+      if (other) expect(await findOrderByToken(A, other)).toBeNull(); // but its link can never open store A's order
+    });
+    it("lookups are rate limited so numbers and emails cannot be guessed", async () => {
+      const o = (await orders.find(A, {}, 1))[0];
+      let blocked = false;
+      for (let i = 0; i < 20; i++) if ((await lookupOrderToken(A, String(o.orderNo), `guess${i}@example.com`, "5.5.5.9")) === null && i > 10) blocked = true;
+      expect(blocked).toBe(true);
+      expect(await lookupOrderToken(A, String(o.orderNo), o.customer.email, "5.5.5.9")).toBeNull(); // even the right answer is refused while limited
+    });
+    it("the attention panel counts what needs action and nothing from other stores", async () => {
+      const col = await orders.collection(A);
+      const base = (await orders.find(A, {}, 1))[0];
+      const mk = (extra: object) => ({ ...base, _id: `att-${Math.random()}`, orderNo: Math.floor(Math.random() * 1e8) + 10_000, idempotencyKey: key(), trackingHash: `h-${Math.random()}`, ...extra });
+      await col.insertMany([
+        mk({ state: "pending", payment: { method: "manual", state: "requires_payment", refundedMinor: 0, refunds: [], manual: { methodId: "m", label: "EP", kind: "easypaisa", accountTitle: "A", accountNumber: "1", instructions: "", reference: "TXN1" } } }),
+        mk({ state: "pending", payment: { method: "manual", state: "requires_payment", refundedMinor: 0, refunds: [], manual: { methodId: "m", label: "EP", kind: "easypaisa", accountTitle: "A", accountNumber: "1", instructions: "" } } }),
+        mk({ state: "confirmed", createdAt: new Date(Date.now() - 3600_000) }),
+        mk({ state: "cancelled", flags: { refundRequired: true } }),
+      ] as never);
+      const a = await attentionCounts(A);
+      expect(a.manualWaiting).toBe(2);
+      expect(a.manualReported).toBe(1);
+      expect(a.stale).toBeGreaterThanOrEqual(1);
+      expect(a.refundsDue).toBe(1);
+      expect(a.lowStock).toBeGreaterThanOrEqual(1);
+      expect(await attentionCounts(B)).toMatchObject({ manualWaiting: 0, manualReported: 0, stale: 0, refundsDue: 0 });
     });
     it("the backup includes the store's data but no password hashes, 2-step secrets or payment keys, and nothing from other stores", async () => {
       const c = await (await tenantDb(A)).collection("customers").insertOne({ _id: "cb" as never, instanceId: A.instanceId, email: "bk@example.com", name: "B", passwordHash: "$2b$12$secret", emailVerified: true, addresses: [], wishlist: [], createdAt: new Date() });

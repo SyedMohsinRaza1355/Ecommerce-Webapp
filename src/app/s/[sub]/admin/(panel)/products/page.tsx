@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { guard } from "@/lib/commerce/guard";
 import { authorize } from "@/lib/auth/rbac";
-import { products } from "@/lib/commerce/store";
+import { products, categories } from "@/lib/commerce/store";
 import { fmtMoney } from "@/lib/i18n";
 import { Icon } from "@/components/Icons";
 import BulkProducts from "@/components/admin/BulkProducts";
@@ -20,6 +20,7 @@ export default async function ProductsAdmin({ params, searchParams }: { params: 
   if (sp.status === "draft" || sp.status === "published") filter.status = sp.status;
   if (sp.q) filter.name = { $regex: sp.q.slice(0, 60).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
   const rows = await col.find(products.scope(store.ctx, filter as never)).sort({ updatedAt: -1 }).limit(200).toArray();
+  const catName = new Map((await categories.find(store.ctx, {}, 200)).map((c) => [c._id, c.name]));
 
   return (
     <div>
@@ -43,7 +44,7 @@ export default async function ProductsAdmin({ params, searchParams }: { params: 
           {can && <Link href={`${b}/products/new`} className="btn btn-primary mt-4">Add your first product</Link>}
         </div>
       ) : (
-        <div className="mt-5"><BulkProducts rows={rows.map((p) => ({ id: p._id, name: p.name, price: fmtMoney(p.priceMinor, store.settings.currency, "en"), stock: p.stock, trackStock: p.trackStock, status: p.status }))} can={can} bulk={store.eff.get("F-115")?.enabled === true} base={`${b}/products`} action={bulkProductsAction.bind(null, sub)} /></div>
+        <div className="mt-5"><BulkProducts rows={rows.map((p) => ({ id: p._id, name: p.name, price: fmtMoney(p.priceMinor, store.settings.currency, "en"), stock: p.stock, trackStock: p.trackStock, status: p.status, imageUrl: p.imageUrl || undefined, category: catName.get(p.categoryId ?? "") }))} can={can} bulk={store.eff.get("F-115")?.enabled === true} base={`${b}/products`} action={bulkProductsAction.bind(null, sub)} /></div>
       )}
     </div>
   );

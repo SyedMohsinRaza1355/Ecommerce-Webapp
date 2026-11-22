@@ -312,3 +312,22 @@ export async function salesByDay(ctx: TenantContext, days = 7, now = new Date(),
   }
   return out;
 }
+
+// ---------------- "needs your attention" on the dashboard ----------------
+export type Attention = { manualWaiting: number; manualReported: number; stale: number; refundsDue: number; lowStock: number; messages: number };
+
+/** Counts of things an owner should act on today. Each is a cheap indexed count. */
+export async function attentionCounts(ctx: TenantContext, now = new Date()): Promise<Attention> {
+  const d = await db(ctx);
+  const o = d.collection("orders");
+  const f = { instanceId: ctx.instanceId };
+  const [manualWaiting, manualReported, stale, refundsDue, lowStock, messages] = await Promise.all([
+    o.countDocuments({ ...f, state: "pending", "payment.method": "manual", "payment.state": "requires_payment" }),
+    o.countDocuments({ ...f, state: "pending", "payment.method": "manual", "payment.state": "requires_payment", "payment.manual.reference": { $exists: true } }),
+    o.countDocuments({ ...f, state: "confirmed", createdAt: { $lt: new Date(now.getTime() - 20 * 60_000) } }),
+    o.countDocuments({ ...f, "flags.refundRequired": true }),
+    (await lowStockItems(ctx)).length,
+    d.collection("contact_messages").countDocuments({ ...f, createdAt: { $gt: new Date(now.getTime() - 7 * 86_400_000) } }),
+  ]);
+  return { manualWaiting, manualReported, stale, refundsDue, lowStock, messages };
+}

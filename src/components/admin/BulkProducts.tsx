@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import type { AdminState } from "@/app/s/[sub]/admin/actions";
 import { Result } from "./Forms";
 
-export type BulkRow = { id: string; name: string; price: string; stock: number; trackStock: boolean; status: string };
+export type BulkRow = { id: string; name: string; price: string; stock: number; trackStock: boolean; status: string; imageUrl?: string; category?: string };
 
 /** Product table with optional multi-select and a bulk action bar (F-115). */
 export default function BulkProducts({ rows, can, bulk, base, action }: { rows: BulkRow[]; can: boolean; bulk: boolean; base: string; action: (p: AdminState, f: FormData) => Promise<AdminState> }) {
@@ -52,7 +52,15 @@ export default function BulkProducts({ rows, can, bulk, base, action }: { rows: 
             {rows.map((p) => (
               <tr key={p.id}>
                 {showBoxes && <td><input type="checkbox" name="ids" value={p.id} aria-label={`Tick ${p.name}`} /></td>}
-                <td className="font-semibold">{p.name}</td>
+                <td className="font-semibold">
+                  <span className="flex items-center gap-3">
+                    {p.imageUrl
+                      // eslint-disable-next-line @next/next/no-img-element
+                      ? <img src={p.imageUrl} alt="" width={40} height={40} className="h-10 w-10 shrink-0 rounded-lg object-cover ring-1 ring-line" />
+                      : <span aria-hidden="true" className="ph !aspect-square !w-10 shrink-0 text-sm">{p.name.slice(0, 2).toUpperCase()}</span>}
+                    <span>{p.name}{p.category && <span className="block text-xs font-normal text-muted">{p.category}</span>}</span>
+                  </span>
+                </td>
                 <td>{p.price}</td>
                 <td>{p.trackStock ? <span className={p.stock === 0 ? "badge badge-red" : p.stock <= 5 ? "badge badge-amber" : ""}>{p.stock}</span> : <span className="text-muted">Not tracked</span>}</td>
                 <td><span className={`badge ${p.status === "published" ? "badge-green" : "badge-slate"}`}>{p.status}</span></td>

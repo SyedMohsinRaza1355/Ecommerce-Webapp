@@ -542,3 +542,19 @@ export async function anonymizeCustomer(ctx: TenantContext, email: string): Prom
   );
   return r.modifiedCount;
 }
+
+/**
+ * For guests who lost their order link: the order number AND the email used must both match.
+ * The answer is identical for "no such order" and "wrong email", and attempts are limited.
+ */
+export async function lookupOrderToken(ctx: TenantContext, orderNoRaw: string, emailRaw: string, ip: string): Promise<string | null> {
+  const { rateLimit } = await import("@/lib/auth/ratelimit");
+  if (!(await rateLimit(`lookup:${ctx.instanceId}:${ip}`, 8, 10 * 60_000)).ok) return null;
+  const no = Number(orderNoRaw.replace(/[^0-9]/g, ""));
+  const email = emailRaw.trim().toLowerCase();
+  if (!Number.isInteger(no) || no < 1 || !EMAIL_RE.test(email)) return null;
+  if (!(await rateLimit(`lookup-e:${ctx.instanceId}:${email}`, 5, 10 * 60_000)).ok) return null;
+  const o = (await orders.find(ctx, { orderNo: no } as never, 1))[0];
+  if (!o || o.customer.email !== email) return null;
+  return trackingTokenFor(ctx.instanceId, o._id);
+}

@@ -8,7 +8,7 @@ import { fmtMoney, fmtDate } from "@/lib/i18n";
 import { hoursAgo } from "@/lib/time";
 import { Icon } from "@/components/Icons";
 import { getPaymentConfig } from "@/lib/payments/config";
-import { salesByDay } from "@/lib/commerce/extras";
+import { salesByDay, attentionCounts } from "@/lib/commerce/extras";
 import SalesChart from "@/components/admin/SalesChart";
 
 export const metadata = { title: "Dashboard" };
@@ -82,6 +82,30 @@ export default async function AdminHome({ params, searchParams }: { params: Prom
         {canReports && <Stat i={2} label="Net sales" value={fmtMoney(net, cur, "en")} icon={Icon.tag} />}
         <Stat i={3} label="Products live" value={`${publishedCount} / ${totalProducts}`} icon={Icon.box} />
       </div>
+
+      {canOrders && await (async () => {
+        const a = await attentionCounts(ctx);
+        const items: { text: string; href: string; tone: "red" | "amber" }[] = [
+          ...(a.manualReported ? [{ text: `${a.manualReported} customer${a.manualReported === 1 ? "" : "s"} say they paid by transfer or wallet. Check your account and press Mark as paid.`, href: `${b}/orders?state=pending`, tone: "red" as const }] : []),
+          ...(a.manualWaiting - a.manualReported > 0 ? [{ text: `${a.manualWaiting - a.manualReported} order${a.manualWaiting - a.manualReported === 1 ? " is" : "s are"} waiting for a transfer or wallet payment.`, href: `${b}/orders?state=pending`, tone: "amber" as const }] : []),
+          ...(a.stale ? [{ text: `${a.stale} confirmed order${a.stale === 1 ? " has" : "s have"} been waiting over 20 minutes.`, href: `${b}/orders?state=confirmed`, tone: "red" as const }] : []),
+          ...(a.refundsDue ? [{ text: `${a.refundsDue} cancelled order${a.refundsDue === 1 ? "" : "s"} need${a.refundsDue === 1 ? "s" : ""} a refund.`, href: `${b}/orders`, tone: "red" as const }] : []),
+          ...(a.lowStock ? [{ text: `${a.lowStock} product${a.lowStock === 1 ? " is" : "s are"} running low on stock.`, href: `${b}/products`, tone: "amber" as const }] : []),
+          ...(a.messages ? [{ text: `${a.messages} customer message${a.messages === 1 ? "" : "s"} in the last 7 days.`, href: `${b}/inbox`, tone: "amber" as const }] : []),
+        ];
+        return (
+          <section className="card reveal reveal-2 mt-5" aria-labelledby="attn">
+            <h2 id="attn" className="font-extrabold">Needs your attention</h2>
+            {items.length === 0 ? <p className="mt-2 text-sm text-emerald-700">All clear. Nothing is waiting for you.</p> : (
+              <ul className="mt-3 space-y-2">
+                {items.map((i) => (
+                  <li key={i.text}><Link href={i.href} className={`flex items-start gap-3 rounded-xl p-3 text-sm font-semibold ring-1 hover:brightness-95 ${i.tone === "red" ? "bg-red-50 text-red-900 ring-red-200" : "bg-amber-50 text-amber-900 ring-amber-200"}`}><span aria-hidden="true" className="mt-0.5">{i.tone === "red" ? "●" : "○"}</span><span>{i.text}</span></Link></li>
+                ))}
+              </ul>
+            )}
+          </section>
+        );
+      })()}
 
       {canReports && (
         <section className="card reveal reveal-3 mt-6" aria-labelledby="sales7">

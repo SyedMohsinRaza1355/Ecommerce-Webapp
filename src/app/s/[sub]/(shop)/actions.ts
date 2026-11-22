@@ -138,3 +138,42 @@ export async function unsubscribeAction(sub: string, email: string, token: strin
   const ok = await unsubscribe(s.ctx, email, token);
   redirect(`/s/${sub}/unsubscribe?${ok ? "done=1" : "bad=1"}`);
 }
+
+// ---------------- find an order without the link ----------------
+import { lookupOrderToken } from "@/lib/commerce/orders";
+
+export async function trackAction(sub: string, _p: AcctState, form: FormData): Promise<AcctState> {
+  const s = await okStore(sub);
+  const ip = ((await headers()).get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
+  const token = await lookupOrderToken(s.ctx, String(form.get("orderNo") ?? ""), String(form.get("email") ?? ""), ip);
+  if (!token) return { error: "We could not find an order with that number and email. Check both and try again.", values: { orderNo: String(form.get("orderNo") ?? ""), email: String(form.get("email") ?? "") } };
+  redirect(`/s/${sub}/order/${token}`);
+}
+
+export async function setQtyAction(sub: string, productId: string, qty: number): Promise<void> {
+  const s = await okStore(sub);
+  const cartId = (await cookies()).get(cartCookie(s.instance._id))?.value;
+  if (!cartId || !Number.isInteger(qty)) return;
+  await setCartQty(s.ctx, cartId, productId, qty, "set");
+  revalidatePath(`/s/${sub}`, "layout");
+}
+
+/** Puts the items of an earlier order back in the cart (only items that are still on sale). */
+export async function reorderAction(sub: string, orderId: string) {
+  const s = await okStore(sub);
+  const { currentCustomer } = await import("@/lib/commerce/customers");
+  const c = await currentCustomer(s);
+  if (!c) redirect(`/s/${sub}/account/login`);
+  const { orders } = await import("@/lib/commerce/orders");
+  const o = await orders.findById(s.ctx, orderId);
+  if (!o || o.customerId !== c._id) redirect(`/s/${sub}/account`);
+  const jar = await cookies();
+  let cartId = jar.get(cartCookie(s.instance._id))?.value;
+  if (!cartId) {
+    cartId = newCartId();
+    jar.set(cartCookie(s.instance._id), cartId, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 14 });
+  }
+  for (const i of o.items) await setCartQty(s.ctx, cartId, i.productId, i.qty, "add");
+  revalidatePath(`/s/${sub}`, "layout");
+  redirect(`/s/${sub}/cart`);
+}

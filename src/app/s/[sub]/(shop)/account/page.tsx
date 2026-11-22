@@ -5,6 +5,7 @@ import { currentCustomer, ordersOf } from "@/lib/commerce/customers";
 import { trackingTokenFor } from "@/lib/commerce/orders";
 import { fmtDate, fmtMoney } from "@/lib/i18n";
 import AcctForm from "@/components/store/AcctForm";
+import { reorderAction } from "../actions";
 import { addAddressAction, deleteAccountAction, logoutAction, profileAction, removeAddressAction, verifyEmailAction } from "./actions";
 
 export const metadata = { title: "My account", robots: { index: false } };
@@ -55,7 +56,7 @@ export default async function Account({ params, searchParams }: { params: Promis
                     <tr key={o._id}>
                       <td>#{o.orderNo}</td><td className="whitespace-nowrap text-xs">{fmtDate(o.createdAt, L)}</td>
                       <td><span className="badge badge-indigo">{o.state}</span></td><td>{fmtMoney(o.totalMinor, o.currency, L)}</td>
-                      <td><Link className="underline" href={`${base}/order/${trackingTokenFor(s.ctx.instanceId, o._id)}`}>Track</Link></td>
+                      <td className="whitespace-nowrap"><Link className="underline" href={`${base}/order/${trackingTokenFor(s.ctx.instanceId, o._id)}`}>Track</Link><form action={reorderAction.bind(null, sub, o._id)} className="ms-3 inline"><button className="underline">Order again</button></form></td>
                     </tr>
                   ))}
                 </tbody>

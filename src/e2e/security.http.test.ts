@@ -478,3 +478,34 @@ describe.skipIf(!ENABLED)("HTTP: roles land where they work, till, kitchen board
     expect((await call("/")).body).toContain("Browse stores");
   });
 });
+
+describe.skipIf(!ENABLED)("HTTP: shopper journey pages and owner screens", () => {
+  const S = () => `/s/${subA}`;
+  it("the track-your-order page is public and the order page shows progress and next steps", async () => {
+    const t = await call(`${S()}/track`);
+    expect(t.status).toBe(200);
+    expect(t.body).toContain("Track your order");
+    expect((await call(`${S()}/track`, { method: "POST", body: "a=1", headers: { "content-type": "application/x-www-form-urlencoded" } })).status).not.toBe(500);
+    if (!orderTokenA) return;
+    const o = await call(`${S()}/order/${orderTokenA}`);
+    expect(o.status).toBe(200);
+    expect(o.body).toContain("Order progress");
+    expect(o.body).toContain("Placed");
+  });
+  it("the cart page and empty cart both render (with suggestions when empty)", async () => {
+    const c = await call(`${S()}/cart`);
+    expect(c.status).toBe(200);
+    expect(c.body).toContain("Featured products");
+  });
+  it("owner screens: features hides unfinished items by default and can show them; dashboard shows the attention panel", async () => {
+    const f = await call(`${S()}/admin/features`, { cookie: cookieOwnerA });
+    expect(f.status).toBe(200);
+    expect(f.body).toContain("ready to use");
+    expect(f.body).not.toContain("Coming soon");
+    const all = await call(`${S()}/admin/features?all=1`, { cookie: cookieOwnerA });
+    expect(all.body).toContain("Coming soon");
+    const d = await call(`${S()}/admin`, { cookie: cookieOwnerA });
+    expect(d.body).toContain("Needs your attention");
+    expect((await call(`${S()}/admin/features`)).status).toBe(307);
+  });
+});
