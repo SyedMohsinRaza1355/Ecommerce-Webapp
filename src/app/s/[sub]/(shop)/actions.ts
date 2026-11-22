@@ -110,3 +110,24 @@ export async function reportPaymentAction(sub: string, token: string, _p: CartSt
   revalidatePath(`/s/${sub}/pay/${token}`);
   return r.ok ? { message: "Thank you! We will confirm your payment shortly and email you." } : { error: r.error };
 }
+
+// ---------------- newsletter and contact form ----------------
+import { subscribeNewsletter, saveContactMessage } from "@/lib/commerce/extras";
+import type { AcctState } from "./account/actions";
+
+export async function newsletterAction(sub: string, _p: AcctState, form: FormData): Promise<AcctState> {
+  const s = await okStore(sub);
+  if (s.eff.get("F-058")?.enabled !== true) return { error: "Newsletter signup is not available." };
+  const ip = ((await headers()).get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
+  const r = await subscribeNewsletter(s.ctx, String(form.get("email") ?? ""), ip, { storeName: s.settings.branding.storeName || s.instance.name, welcome: s.feat.emails });
+  return r.ok ? { message: "Thanks! You are subscribed." } : { error: r.error };
+}
+
+export async function contactAction(sub: string, _p: AcctState, form: FormData): Promise<AcctState> {
+  const s = await okStore(sub);
+  if (s.eff.get("F-080")?.enabled === false) return { error: "The contact form is not available." };
+  const values = { name: String(form.get("name") ?? ""), email: String(form.get("email") ?? ""), message: String(form.get("message") ?? "") };
+  const ip = ((await headers()).get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
+  const r = await saveContactMessage(s.ctx, { ...values, honeypot: String(form.get("website") ?? "") }, ip, s.settings.contactEmail || null, s.settings.branding.storeName || s.instance.name);
+  return r.ok ? { message: "Thank you! Your message was sent. We will reply by email." } : { error: r.error, values };
+}

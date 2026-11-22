@@ -15,7 +15,7 @@ import type { Features } from "./orders";
 
 export function featuresFrom(eff: ReadonlyMap<string, Effective>): Features {
   const on = (id: string) => eff.get(id)?.enabled ?? false;
-  return { shipping: on("F-063"), freeShipping: on("F-065"), tax: on("F-042"), discounts: on("F-053"), cod: on("F-038"), card: on("F-037"), emails: on("F-030"), stockTracking: on("F-019"), manualBank: on("F-039"), wallet: on("F-040") };
+  return { shipping: on("F-063"), freeShipping: on("F-065"), tax: on("F-042"), discounts: on("F-053"), cod: on("F-038"), card: on("F-037"), emails: on("F-030"), stockTracking: on("F-019"), manualBank: on("F-039"), wallet: on("F-040"), lowStock: on("F-020"), maintenance: on("F-110") };
 }
 
 export type ChangeResult = { ok: true; changed: string[] } | { ok: false; error: string };

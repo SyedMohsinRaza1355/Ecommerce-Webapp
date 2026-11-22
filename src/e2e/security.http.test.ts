@@ -35,7 +35,7 @@ let idA = "", idB = "", subA = "demo-burgers", subB = "sec-b";
 let ownerA = "", ownerB = "", cashierA = "", kitchenA = "";
 let cookieOwnerA = "", cookieOwnerB = "", cookieCashierA = "", cookieKitchenA = "", cookieSA = "", orderTokenA = "", productSlugA = "zinger-burger";
 
-const ADMIN_PAGES = ["", "/orders", "/products", "/products/new", "/categories", "/discounts", "/features", "/settings", "/staff", "/activity", "/emails", "/privacy", "/security"];
+const ADMIN_PAGES = ["", "/orders", "/products", "/products/new", "/categories", "/discounts", "/features", "/settings", "/staff", "/activity", "/emails", "/privacy", "/security", "/payments", "/content", "/inbox", "/reports"];
 
 describe.skipIf(!ENABLED)("HTTP security: authentication, authorisation and tenant isolation", () => {
   beforeAll(async () => {
@@ -114,7 +114,7 @@ describe.skipIf(!ENABLED)("HTTP security: authentication, authorisation and tena
       expect((await call(`/s/${subA}/admin/staff`, { cookie: lie })).status).toBe(307);
     });
     it("cashiers cannot open owner-only or catalogue pages; they can open orders", async () => {
-      for (const p of ["/staff", "/features", "/settings", "/discounts", "/privacy", "/products/new", "/categories", "/activity"]) {
+      for (const p of ["/staff", "/features", "/settings", "/discounts", "/privacy", "/products/new", "/categories", "/activity", "/payments", "/content", "/inbox", "/reports"]) {
         const r = await call(`/s/${subA}/admin${p}`, { cookie: cookieCashierA });
         expect(r.status, p).toBe(307);
         expect(r.location, p).toContain("denied=1");
@@ -122,7 +122,7 @@ describe.skipIf(!ENABLED)("HTTP security: authentication, authorisation and tena
       expect((await call(`/s/${subA}/admin/orders`, { cookie: cookieCashierA })).status).toBe(200);
     });
     it("kitchen staff only see orders and stock, nothing financial", async () => {
-      for (const p of ["/staff", "/features", "/settings", "/discounts", "/privacy", "/products/new", "/categories", "/activity", "/emails"]) {
+      for (const p of ["/staff", "/features", "/settings", "/discounts", "/privacy", "/products/new", "/categories", "/activity", "/emails", "/payments", "/content", "/inbox", "/reports"]) {
         expect((await call(`/s/${subA}/admin${p}`, { cookie: cookieKitchenA })).status, p).toBe(307);
       }
       expect((await call(`/s/${subA}/admin/orders`, { cookie: cookieKitchenA })).status).toBe(200);
@@ -274,5 +274,82 @@ describe.skipIf(!ENABLED)("HTTP security: authentication, authorisation and tena
       expect(r.body).toContain("Contact:");
       expect(r.body).toContain("Expires:");
     });
+  });
+});
+
+describe.skipIf(!ENABLED)("HTTP: accounts, payments webhooks, exports and housekeeping", () => {
+  const S = () => `/s/${subA}`;
+  it("customer account pages render and protect what is private", async () => {
+    for (const p of ["/account/login", "/account/register", "/account/forgot", "/contact"]) {
+      const r = await call(`${S()}${p}`);
+      expect(r.status, p).toBe(200);
+      expect(r.headers["content-security-policy"], p).toContain("nonce-");
+    }
+    const acct = await call(`${S()}/account`);
+    expect(acct.status).toBe(307);
+    expect(acct.location).toContain("/account/login");
+    expect((await call(`${S()}/account/export`)).status).toBe(401);
+    expect((await call(`${S()}/account/wishlist`)).status).toBe(404); // wishlist is off by default
+    expect((await call(`${S()}/account/link/${"a".repeat(43)}`)).status).toBe(200); // shows a button, uses nothing up
+    expect((await call(`${S()}/p/does-not-exist`)).status).toBe(404);
+  });
+  it("a forged customer cookie opens nothing", async () => {
+    const forged = `cust_${idA}=${await signSession({ userId: "someone", role: "customer", instanceId: idA }, SECRET)}`; // a STAFF-style token is not a customer token
+    expect((await call(`${S()}/account`, { cookie: forged })).status).toBe(307);
+    expect((await call(`${S()}/account/export`, { cookie: forged })).status).toBe(401);
+    expect((await call(`${S()}/account/export`, { cookie: `cust_${idA}=garbage` })).status).toBe(401);
+  });
+  it("a staff session is not a customer session and a customer cookie is not a staff session", async () => {
+    const asCustomer = `cust_${idA}=${cookieOwnerA.split("=")[1]}`;
+    expect((await call(`${S()}/account/export`, { cookie: asCustomer })).status).toBe(401);
+    const asStaff = `store_session=${cookieOwnerA.split("=")[1]}`.replace("store_session", "cust_x");
+    expect((await call(`${S()}/admin`, { cookie: asStaff })).status).toBe(307);
+  });
+  it("CSV exports: staff with report access only, never signed-out, cashiers or other stores", async () => {
+    expect((await call(`${S()}/admin/export/orders`)).status).toBe(403);
+    expect((await call(`${S()}/admin/export/orders`, { cookie: cookieCashierA })).status).toBe(403);
+    expect((await call(`${S()}/admin/export/orders`, { cookie: cookieOwnerB })).status).toBe(403);
+    const ok = await call(`${S()}/admin/export/orders`, { cookie: cookieOwnerA });
+    expect(ok.status).toBe(200);
+    expect(ok.headers["content-type"]).toContain("text/csv");
+    expect(ok.headers["content-disposition"]).toContain("attachment");
+    expect(ok.body.split("\r\n")[0]).toContain("order,date,status");
+    expect((await call(`${S()}/admin/export/secrets`, { cookie: cookieOwnerA })).status).toBe(404);
+    expect((await call(`${S()}/admin/export/users`, { cookie: cookieOwnerA })).status).toBe(404);
+  });
+  it("backup is owner only and off until the feature is switched on", async () => {
+    expect((await call(`${S()}/admin/backup`)).status).toBe(403);
+    expect((await call(`${S()}/admin/backup`, { cookie: cookieCashierA })).status).toBe(403);
+    expect((await call(`${S()}/admin/backup`, { cookie: cookieOwnerA })).status).toBe(403);
+  });
+  it("receipts are staff-only", async () => {
+    const ctxA = issueTenantContext(idA);
+    const o = (await orders.find(ctxA, {}, 1))[0];
+    if (!o) return;
+    expect((await call(`${S()}/admin/print/${o._id}`)).status).toBe(307);
+    expect((await call(`${S()}/admin/print/${o._id}`, { cookie: cookieOwnerB })).status).toBe(307);
+    const r = await call(`${S()}/admin/print/${o._id}`, { cookie: cookieOwnerA });
+    expect(r.status).toBe(200);
+    expect(r.body).toContain(`#${o.orderNo}`);
+  });
+  it("the Stripe webhook refuses everything unsigned, unknown or oversized, and GET", async () => {
+    const url = `/api/webhooks/stripe/${idA}`;
+    const body = JSON.stringify({ id: "evt_1", type: "checkout.session.completed", data: { object: { id: "cs_1" } } });
+    expect((await call(url, { method: "GET" })).status).toBe(405);
+    expect((await call(url, { method: "POST", body })).status).toBe(400); // no Stripe account connected: nothing can be verified
+    expect((await call(url, { method: "POST", body, headers: { "stripe-signature": `t=${Math.floor(Date.now() / 1000)},v1=${"0".repeat(64)}` } })).status).toBe(400);
+    expect((await call("/api/webhooks/stripe/not-a-real-store-id", { method: "POST", body })).status).toBe(404);
+    expect((await call("/api/webhooks/stripe/..%2F..%2Fadmin", { method: "POST", body })).status).toBe(404);
+    const big = await call(url, { method: "POST", body: "x".repeat(300 * 1024), headers: { "content-length": String(300 * 1024) } });
+    expect(big.status).toBe(413);
+  });
+  it("housekeeping endpoint is closed without the secret", async () => {
+    const r = await call("/api/cron/maintenance");
+    expect([401, 503]).toContain(r.status);
+    expect((await call("/api/cron/maintenance", { headers: { authorization: "Bearer wrong-secret-value-123" } })).status).toBeGreaterThanOrEqual(401);
+  });
+  it("payments page needs the owner: kitchen and cashier are turned away", async () => {
+    expect((await call(`${S()}/admin/payments`, { cookie: cookieOwnerA })).status).toBe(200);
+    expect((await call(`${S()}/admin/payments`, { cookie: cookieCashierA })).status).toBe(307);
   });
 });

@@ -9,6 +9,7 @@ import { canOrderMove, roleMayMoveOrder, type OrderState } from "./states";
 import { signBody, verifySignature, type GatewayEvent } from "./gateway";
 import { enqueueEmail, processOutbox } from "./outbox";
 import { formatMajor, money } from "@/lib/money/money";
+import { notifyLowStock } from "./extras";
 import { getPaymentConfig, getStripeKey, getStripeWebhookSecret } from "@/lib/payments/config";
 import { createCheckoutSession, createRefund, retrieveCheckoutSession, verifyStripeSignature } from "@/lib/payments/stripe";
 import type { Order, Product, Settings } from "./types";
@@ -37,7 +38,7 @@ export async function trackUrlFor(ctx: TenantContext, token: string): Promise<st
   return `${await storeUrlFor(ctx)}/order/${token}`;
 }
 
-export type Features = { shipping: boolean; freeShipping: boolean; tax: boolean; discounts: boolean; cod: boolean; card: boolean; emails: boolean; stockTracking: boolean; manualBank?: boolean; wallet?: boolean };
+export type Features = { shipping: boolean; freeShipping: boolean; tax: boolean; discounts: boolean; cod: boolean; card: boolean; emails: boolean; stockTracking: boolean; manualBank?: boolean; wallet?: boolean; lowStock?: boolean; maintenance?: boolean };
 
 export type PlaceInput = {
   items: { productId: string; qty: number }[];
@@ -106,6 +107,7 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
     return { ok: true, orderId: existing._id, orderNo: existing.orderNo, trackingToken: trackingTokenFor(ctx.instanceId, existing._id), needsPayment: existing.payment.state === "requires_payment", duplicate: true };
   }
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(input.idempotencyKey)) return { ok: false, error: "Invalid request. Please reload the page.", code: "validation" };
+  if (feat.maintenance) return { ok: false, error: "The store is temporarily closed for maintenance. Please try again soon.", code: "validation" };
   const bad = validateCustomer(input.customer);
   if (bad) return { ok: false, error: bad, code: "validation" };
   const cfg = await getPaymentConfig(ctx);
@@ -167,6 +169,8 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
     const name = found.find((p) => p._id === failed)?.name ?? "an item";
     return { ok: false, error: `Sorry, "${name}" just sold out or has too little stock.`, code: "stock" };
   }
+
+  if (feat.lowStock && feat.emails) await notifyLowStock(ctx, tracked.filter((t) => t.tracked), settings.contactEmail || null, storeName).catch(() => undefined);
 
   // consume the discount atomically (usage limit is race-safe)
   if (code) {

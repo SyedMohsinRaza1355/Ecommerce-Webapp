@@ -8,7 +8,7 @@ import { nextOrderStates, roleMayMoveOrder } from "@/lib/commerce/states";
 import { fmtDate, fmtMoney } from "@/lib/i18n";
 import { formatMajor, money as toMoney } from "@/lib/money/money";
 import { ActionButton, AF } from "@/components/admin/Forms";
-import { orderStatusAction, refundAction, confirmPaymentAction } from "@/app/s/[sub]/admin/actions";
+import { orderStatusAction, refundAction, confirmPaymentAction, orderNoteAction } from "@/app/s/[sub]/admin/actions";
 
 export const metadata = { title: "Order" };
 
@@ -32,6 +32,12 @@ export default async function OrderDetail({ params }: { params: Promise<{ sub: s
         {o.flags?.refundRequired && <span className="badge badge-red">Refund due</span>}
       </div>
       <p className="text-sm text-muted">Placed {fmtDate(o.createdAt, "en")}</p>
+      {(store.eff.get("F-036")?.enabled !== false || store.eff.get("F-070")?.enabled === true) && (
+        <p className="mt-2 flex flex-wrap gap-2">
+          {store.eff.get("F-036")?.enabled !== false && <a className="btn btn-secondary" href={`/s/${sub}/admin/print/${o._id}`} target="_blank" rel="noopener noreferrer">Print receipt</a>}
+          {store.eff.get("F-070")?.enabled === true && <a className="btn btn-secondary" href={`/s/${sub}/admin/print/${o._id}?kind=slip`} target="_blank" rel="noopener noreferrer">Print packing slip</a>}
+        </p>
+      )}
 
       <div className="mt-6 grid gap-5 lg:grid-cols-3">
         <section className="card lg:col-span-2" aria-labelledby="it">
@@ -85,7 +91,7 @@ export default async function OrderDetail({ params }: { params: Promise<{ sub: s
         {canRefund && (
           <section className="card" aria-labelledby="rf">
             <h2 id="rf" className="font-extrabold">Refund</h2>
-            <p className="text-sm text-muted">Up to {money(remaining)} can still be refunded.</p>
+            <p className="text-sm text-muted">Up to {money(remaining)} can still be refunded. {o.payment.provider === "stripe" ? "The money goes back to the customer's card through Stripe." : "This records the refund. Send the money back to the customer yourself (cash, transfer or wallet)."}</p>
             {remaining > 0 && (
               <AF action={refundAction.bind(null, sub, o._id)} submit="Issue refund" className="mt-3">
                 <input type="hidden" name="key" value={randomUUID()} />
@@ -96,11 +102,21 @@ export default async function OrderDetail({ params }: { params: Promise<{ sub: s
         )}
       </div>
 
+      {store.eff.get("F-032")?.enabled !== false && (
+        <section className="card mt-5" aria-labelledby="nt">
+          <h2 id="nt" className="font-extrabold">Staff notes</h2>
+          <p className="text-sm text-muted">Only your team can see these. Customers never do.</p>
+          <AF action={orderNoteAction.bind(null, sub, o._id)} submit="Add note" className="mt-3">
+            <label className="field"><span>Note</span><input className="input" name="note" maxLength={500} required /></label>
+          </AF>
+        </section>
+      )}
+
       <section className="card mt-5" aria-labelledby="hi">
         <h2 id="hi" className="font-extrabold">History</h2>
         <ol className="timeline mt-4">
           {[...o.history].reverse().map((h, i) => (
-            <li key={i}><p className="text-sm font-semibold">{h.kind}: {h.from ? `${h.from} → ` : ""}{h.to}{h.note ? ` (${h.note})` : ""}</p><p className="text-xs text-muted">{fmtDate(h.at, "en")} by {h.by}</p></li>
+            <li key={i}><p className="text-sm font-semibold">{h.kind === "note" ? `Note: ${h.note}` : `${h.kind}: ${h.from ? `${h.from} → ` : ""}${h.to}${h.note ? ` (${h.note})` : ""}`}</p><p className="text-xs text-muted">{fmtDate(h.at, "en")} by {h.by}</p></li>
           ))}
         </ol>
       </section>

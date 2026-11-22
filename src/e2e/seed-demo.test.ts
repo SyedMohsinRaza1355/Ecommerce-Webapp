@@ -18,10 +18,10 @@ describe.skipIf(process.env.SEED_DEMO !== "1")("seed demo store", () => {
   it("creates the demo store, owner, catalogue and discount (idempotent)", async () => {
     await ensurePlatform();
     const db = await platformDb();
-    let inst = await db.collection<InstanceRecord>("instances").findOne({ subdomain: "demo" });
+    let inst = await db.collection<InstanceRecord>("instances").findOne({ subdomain: process.env.SEED_SUB ?? "demo" });
     let password = "";
     if (!inst) {
-      const r = await provisionInstance({ userId: "seed", role: "super_admin", instanceId: null }, { name: "Demo Burgers", subdomain: "demo", packId: "restaurant", planId: "pro", ownerEmail: "owner@demo.test" });
+      const r = await provisionInstance({ userId: "seed", role: "super_admin", instanceId: null }, { name: "Demo Burgers", subdomain: process.env.SEED_SUB ?? "demo", packId: "restaurant", planId: "pro", ownerEmail: "owner@demo.test" });
       if (!r.ok) throw new Error(r.message);
       inst = (await db.collection<InstanceRecord>("instances").findOne({ _id: r.instanceId as never }))!;
       const ctx = issueTenantContext(inst._id);

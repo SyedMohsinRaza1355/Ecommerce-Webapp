@@ -20,6 +20,8 @@ export default async function AdminLayout({ children, params }: { children: Reac
     { href: b, label: "Dashboard", icon: Icon.home, exact: true },
     ...(can("orders.updateStatus") ? [{ href: `${b}/orders`, label: "Orders", icon: Icon.cart }] : []),
     ...(can("catalog.manage") || can("inventory.view") ? [{ href: `${b}/products`, label: "Products", icon: Icon.box }, ...(can("catalog.manage") ? [{ href: `${b}/categories`, label: "Categories", icon: Icon.list }] : [])] : []),
+    ...(can("catalog.manage") ? [{ href: `${b}/content`, label: "Content", icon: Icon.globe }, { href: `${b}/inbox`, label: "Inbox", icon: Icon.users }] : []),
+    ...(can("reports.view") ? [{ href: `${b}/reports`, label: "Reports", icon: Icon.list }] : []),
     ...(can("promotions.manage") ? [{ href: `${b}/discounts`, label: "Discounts", icon: Icon.tag }] : []),
     ...(can("payments.manage") ? [{ href: `${b}/payments`, label: "Payments", icon: Icon.lock }] : []),
     ...(can("toggle.enable") ? [{ href: `${b}/features`, label: "Features", icon: Icon.switch }] : []),

@@ -6,6 +6,7 @@ import { CATALOG, TOGGLES } from "@/lib/toggles/catalog";
 import { evaluateToggles } from "@/lib/toggles/evaluate";
 import { DEFAULT_PLANS } from "@/lib/platform/plans";
 import { dbNameFor } from "@/lib/tenant/context";
+import { TENANT_MIGRATIONS } from "@/lib/db/migrations";
 import type { Actor } from "@/lib/auth/rbac";
 
 const sa: Actor = { userId: "sa-test", role: "super_admin", instanceId: null };
@@ -62,7 +63,7 @@ describe.skipIf(!HAS_DB)("provisioning saga (Atlas, synthetic data)", () => {
     const client = await getClient();
     const tdb = client.db(dbNameFor(r.instanceId));
     expect(await tdb.collection("categories").countDocuments()).toBe(5);
-    expect((await tdb.collection("_meta").findOne({ _id: "schema" as never }))?.schemaVersion).toBe(2);
+    expect((await tdb.collection("_meta").findOne({ _id: "schema" as never }))?.schemaVersion).toBe(TENANT_MIGRATIONS.length);
     const inv = await db.collection<Invite>("invites").findOne({ _id: hashToken(r.inviteToken) });
     expect(inv?.email).toBe("owner@example.com");
     expect(inv?.usedAt).toBeNull();

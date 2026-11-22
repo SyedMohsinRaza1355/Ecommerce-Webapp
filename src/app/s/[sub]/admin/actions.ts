@@ -376,3 +376,79 @@ export async function testEmailAction(sub: string): Promise<AdminState> {
   revalidatePath(`${home(sub)}/emails`);
   return { message: `Test email queued for ${to}. Check the list below to see whether it was sent.` };
 }
+
+// ---------------- notes, content, reviews, import ----------------
+import { savePage, deletePage, setReviewStatus, importProductsCsv } from "@/lib/commerce/extras";
+import { orders as ordersRepo } from "@/lib/commerce/orders";
+
+export async function orderNoteAction(sub: string, orderId: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "orders.updateStatus");
+  if (!g) return { error: "You do not have permission to change orders." };
+  if (g.store.eff.get("F-032")?.enabled === false) return { error: "Order notes are turned off." };
+  const note = fd(form, "note").trim();
+  if (note.length < 1 || note.length > 500) return { error: "Write a note of 1 to 500 characters." };
+  const r = await (await ordersRepo.collection(g.store.ctx)).updateOne(
+    { _id: orderId, instanceId: g.store.ctx.instanceId } as never,
+    { $push: { history: { at: new Date(), kind: "note", by: g.staff.actor.userId, note } } } as never,
+  );
+  if (r.matchedCount !== 1) return { error: "Order not found." };
+  revalidatePath(`${home(sub)}/orders/${orderId}`);
+  return { message: "Note added (only staff can see it)." };
+}
+
+export async function announcementAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "branding.edit");
+  if (!g) return { error: "You do not have permission to edit the store." };
+  const text = fd(form, "announcement").trim();
+  if (text.length > 160) return { error: "The announcement can be at most 160 characters." };
+  await (await tenantDb(g.store.ctx)).collection("settings").updateOne({ instanceId: g.store.ctx.instanceId }, { $set: { announcement: text } });
+  await bumpInstance(g.store.instance._id);
+  clearResolutionCache();
+  await record(g.store, g.staff, "settings.announcement");
+  revalidatePath(`/s/${sub}`, "layout");
+  return { message: text ? "Announcement is live on your store." : "Announcement removed." };
+}
+
+export async function pageAction(sub: string, id: string | null, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "branding.edit");
+  if (!g) return { error: "You do not have permission to edit pages." };
+  if (g.store.eff.get("F-078")?.enabled === false) return { error: "Custom pages are turned off." };
+  const r = await savePage(g.store.ctx, { id: id ?? undefined, title: fd(form, "title"), slug: fd(form, "slug"), body: fd(form, "body"), published: form.get("published") === "on", inFooter: form.get("inFooter") === "on" });
+  if (!r.ok) return { error: r.error };
+  await record(g.store, g.staff, id ? "page.update" : "page.create", fd(form, "title"));
+  revalidatePath(`/s/${sub}`, "layout");
+  return { message: "Page saved." };
+}
+
+export async function pageDeleteAction(sub: string, id: string): Promise<AdminState> {
+  const g = await guardSoft(sub, "branding.edit");
+  if (!g) return { error: "You do not have permission to edit pages." };
+  await deletePage(g.store.ctx, id);
+  await record(g.store, g.staff, "page.delete", id);
+  revalidatePath(`/s/${sub}`, "layout");
+  return { message: "Page deleted." };
+}
+
+export async function reviewModerateAction(sub: string, id: string, status: "published" | "hidden" | "deleted"): Promise<AdminState> {
+  const g = await guardSoft(sub, "catalog.manage");
+  if (!g) return { error: "You do not have permission to moderate reviews." };
+  await setReviewStatus(g.store.ctx, id, status);
+  await record(g.store, g.staff, `review.${status}`, id);
+  revalidatePath(`/s/${sub}`, "layout");
+  return { message: "Done." };
+}
+
+export async function importProductsAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "catalog.manage");
+  if (!g) return { error: "You do not have permission to import products." };
+  if (g.store.eff.get("F-011")?.enabled === false) return { error: "Product import is turned off." };
+  const file = form.get("file");
+  if (!(file instanceof File) || file.size === 0) return { error: "Choose a CSV file first." };
+  if (file.size > 1_000_000) return { error: "The file is too large (1 MB maximum)." };
+  const r = await importProductsCsv(g.store.ctx, await file.text(), g.store.settings.currency);
+  await record(g.store, g.staff, "products.import", `${r.created} created, ${r.errors.length} problems`);
+  revalidatePath(`/s/${sub}`, "layout");
+  const detail = r.errors.slice(0, 5).map((e) => `row ${e.row}: ${e.message}`).join("; ");
+  if (r.created === 0 && r.errors.length) return { error: `Nothing was imported. ${detail}` };
+  return { message: `${r.created} product${r.created === 1 ? "" : "s"} imported (set to published in the file to show them in the store).${r.errors.length ? ` ${r.errors.length} row(s) skipped: ${detail}` : ""}` };
+}

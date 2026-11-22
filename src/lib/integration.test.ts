@@ -47,7 +47,7 @@ describe.skipIf(!HAS_DB)("Atlas integration (synthetic tenants, cleaned up after
 
   it("migrations are versioned and idempotent", async () => {
     const db = (await getClient()).db(ctxA.dbName);
-    expect(await migrate(db, TENANT_MIGRATIONS)).toEqual({ from: 2, to: 2 });
+    expect(await migrate(db, TENANT_MIGRATIONS)).toEqual({ from: TENANT_MIGRATIONS.length, to: TENANT_MIGRATIONS.length });
   });
 
   it("resolves hosts: platform, active, suspended, unknown, not-active, reserved and malformed", async () => {

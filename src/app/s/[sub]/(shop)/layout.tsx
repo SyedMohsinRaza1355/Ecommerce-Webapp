@@ -8,7 +8,9 @@ import { t } from "@/lib/i18n";
 import { Icon } from "@/components/Icons";
 import { CookieNotice } from "@/components/store/Bits";
 import { RegisterSW } from "@/components/store/RegisterSW";
-import { setLocaleAction } from "./actions";
+import { setLocaleAction, newsletterAction } from "./actions";
+import { listPages } from "@/lib/commerce/extras";
+import AcctForm from "@/components/store/AcctForm";
 
 export default async function ShopLayout({ children, params }: { children: ReactNode; params: Promise<{ sub: string }> }) {
   const { sub } = await params;
@@ -21,6 +23,9 @@ export default async function ShopLayout({ children, params }: { children: React
   const me = accountsOn ? await currentCustomer(store) : null;
   const count = items.reduce((n, i) => n + i.qty, 0);
   const base = `/s/${sub}`;
+  const footerPages = store.eff.get("F-078")?.enabled !== false && store.eff.get("F-081")?.enabled !== false ? (await listPages(store.ctx, true)).filter((p) => p.inFooter) : [];
+  const newsletterOn = store.eff.get("F-058")?.enabled === true;
+  const contactOn = store.eff.get("F-080")?.enabled !== false;
   const showMaintenance = store.eff.get("F-110")?.enabled;
   const bilingual = store.eff.get("F-085")?.enabled !== false && store.eff.get("F-086")?.enabled !== false;
 
@@ -60,18 +65,27 @@ export default async function ShopLayout({ children, params }: { children: React
           </nav>
         </div>
       </header>
-      {showMaintenance && <div role="status" className="bg-amber-100 px-4 py-2 text-center text-sm text-amber-900">This store is in maintenance mode. Browsing works, but ordering may be limited.</div>}
+      {store.settings.announcement && store.eff.get("F-061")?.enabled !== false && <div role="status" className="px-4 py-2 text-center text-sm font-semibold" style={{ background: "var(--brand-primary)", color: "var(--brand-on-primary)" }}>{store.settings.announcement}</div>}
+      {showMaintenance && <div role="status" className="bg-amber-100 px-4 py-2 text-center text-sm text-amber-900">This store is in maintenance mode. You can browse, but ordering is paused for now.</div>}
       <main id="main" className="mx-auto max-w-6xl px-4 py-8">{children}</main>
       <footer className="border-t border-line bg-white py-8 text-sm text-muted">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4">
           <p>&copy; {new Date().getFullYear()} {name}</p>
-          <p className="flex gap-4">
+          <p className="flex flex-wrap gap-4">
+            {footerPages.map((p) => <Link key={p._id} href={`${base}/p/${p.slug}`} className="underline">{p.title}</Link>)}
+            {contactOn && <Link href={`${base}/contact`} className="underline">Contact</Link>}
             <Link href="/privacy" className="underline">{t(L, "privacy")}</Link>
             <Link href="/terms" className="underline">{t(L, "terms")}</Link>
             <Link href={`${base}/admin/login`} className="underline">{t(L, "adminArea")}</Link>
           </p>
           <p>{t(L, "poweredBy")}</p>
         </div>
+        {newsletterOn && (
+          <div className="mx-auto mt-6 max-w-6xl px-4">
+            <h2 className="font-bold text-slate-900">Get news and offers</h2>
+            <div className="mt-2 max-w-sm"><AcctForm action={newsletterAction.bind(null, sub)} submit="Subscribe" fields={[{ name: "email", label: "Email address", type: "email", autoComplete: "email", required: true, dir: "ltr" }]} /></div>
+          </div>
+        )}
       </footer>
       <nav aria-label="Quick links" className="glass fixed inset-x-0 bottom-0 z-30 grid grid-cols-3 border-t border-line md:hidden">
         <Link href={base} className="flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs font-semibold">{Icon.home}{t(L, "home")}</Link>

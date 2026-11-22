@@ -6,6 +6,7 @@ import { products } from "@/lib/commerce/store";
 import { fmtMoney, fmtDate } from "@/lib/i18n";
 import { hoursAgo } from "@/lib/time";
 import { Icon } from "@/components/Icons";
+import { getPaymentConfig } from "@/lib/payments/config";
 
 export const metadata = { title: "Dashboard" };
 
@@ -18,6 +19,7 @@ export default async function AdminHome({ params, searchParams }: { params: Prom
   const canReports = authorize(staff.actor, "reports.view", ctx).allow;
   const canOrders = authorize(staff.actor, "orders.updateStatus", ctx).allow;
   const cur = store.settings.currency;
+  const payCfg = await getPaymentConfig(ctx);
 
   const [ocol, pcol] = await Promise.all([orders.collection(ctx), products.collection(ctx)]);
   const since = hoursAgo(24);
@@ -35,7 +37,7 @@ export default async function AdminHome({ params, searchParams }: { params: Prom
 
   // launch readiness (ST-19): the few things that must be true before announcing the store
   const checklist = [
-    ["Accept payments", store.feat.card || store.feat.cod, `${b}/features`],
+    ["Accept payments", store.feat.cod || Boolean(payCfg.stripe) || payCfg.manual.some((m) => m.enabled), `${b}/payments`],
     ["Set up shipping", !store.feat.shipping || store.settings.shippingFlatMinor > 0 || store.settings.freeShippingOverMinor !== null, `${b}/settings`],
     ["Publish at least one product", publishedCount > 0, `${b}/products/new`],
     ["Name your store and add contact details", Boolean(store.settings.branding.storeName) && Boolean(store.settings.contactEmail), `${b}/settings`],

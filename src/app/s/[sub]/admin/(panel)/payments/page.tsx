@@ -50,7 +50,7 @@ export default async function PaymentsPage({ params }: { params: Promise<{ sub: 
               <li>Paste it below and press <strong>Connect</strong>. That is all: we set up everything else for you.</li>
             </ol>
             <AF action={connectStripeAction.bind(null, sub)} submit="Connect Stripe" className="mt-4">
-              <label className="field"><span>Stripe secret key</span><input className="input" name="secretKey" autoComplete="off" spellCheck={false} placeholder="sk_test_..." dir="ltr" required /><p className="hint">Stored encrypted. Nobody on the platform team can read it back.</p></label>
+              <label className="field"><span>Stripe secret key</span><input className="input" name="secretKey" autoComplete="off" spellCheck={false} placeholder="sk_test_..." dir="ltr" required /><p className="hint">Stored encrypted and never shown again.</p></label>
             </AF>
             <p className="hint mt-3">Stripe is not available to businesses registered in every country (for example Pakistan). If that is you, use the Easypaisa, JazzCash or bank transfer options below, which need no gateway.</p>
           </div>
