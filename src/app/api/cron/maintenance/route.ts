@@ -3,6 +3,7 @@ import { platformDb } from "@/lib/db/client";
 import { issueTenantContext } from "@/lib/tenant/context";
 import { processOutbox } from "@/lib/commerce/outbox";
 import { expireUnpaidOrders } from "@/lib/commerce/orders";
+import { processWebhooks } from "@/lib/commerce/integrations";
 import { log } from "@/lib/log";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +28,12 @@ export async function GET(req: Request) {
     if (Date.now() - started > 50_000) break; // leave room to finish; the next run continues
     try {
       const ctx = issueTenantContext(String(s._id));
-      emails += (await processOutbox(ctx, { limit: 50 })).sent;
+      for (let n = 0; n < 8; n++) {
+        const r = await processOutbox(ctx, { limit: 50 });
+        emails += r.sent;
+        if (r.sent + r.failed + r.dead < 50) break;
+      }
+      await processWebhooks(ctx, { limit: 50 });
       expired += await expireUnpaidOrders(ctx);
     } catch (e) {
       failed++;

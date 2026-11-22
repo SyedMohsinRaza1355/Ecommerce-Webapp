@@ -9,6 +9,8 @@ export type PricingConfig = {
   shippingFlatMinor: number; // F-063
   freeShippingOverMinor: number | null; // F-065
   discountBps?: number; // percentage code, applied before tax
+  /** automatic promotion already worked out in minor units (used instead of a code when it is larger) */
+  fixedDiscountMinor?: number;
 };
 
 export type Totals = {
@@ -30,7 +32,8 @@ export function computeTotals(lines: Line[], cfg: PricingConfig, opts: { shippin
     if (!Number.isSafeInteger(l.qty) || l.qty < 1 || l.qty > 999) throw new Error("Invalid quantity");
     subtotal = add(subtotal, multiply(money(l.unitMinor, cfg.currency), l.qty));
   }
-  const discount = cfg.discountBps ? percentBps(subtotal, cfg.discountBps) : money(0, cfg.currency);
+  const fixed = Math.min(Math.max(cfg.fixedDiscountMinor ?? 0, 0), subtotal.minor);
+  const discount = cfg.discountBps ? percentBps(subtotal, cfg.discountBps) : money(fixed, cfg.currency);
   const taxable = money(subtotal.minor - discount.minor, cfg.currency);
   const free = cfg.freeShippingOverMinor !== null && taxable.minor >= cfg.freeShippingOverMinor && cfg.freeShippingOverMinor > 0;
   const shipping = opts.shipping && lines.length > 0 && !free ? money(cfg.shippingFlatMinor, cfg.currency) : money(0, cfg.currency);

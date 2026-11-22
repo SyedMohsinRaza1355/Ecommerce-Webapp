@@ -18,7 +18,7 @@ export default async function CartPage({ params }: { params: Promise<{ sub: stri
   const L = s.locale;
   const base = `/s/${sub}`;
   const cartId = (await cookies()).get(`cart_${s.instance._id}`)?.value;
-  const v = await cartView(s.ctx, cartId, pricingConfig(s.settings, s.feat), s.feat.stockTracking);
+  const v = await cartView(s.ctx, cartId, pricingConfig(s.settings, s.feat), s.feat.stockTracking, { autoPromos: s.feat.autoPromos, flashSales: s.feat.flashSales, backorders: s.feat.backorders });
   const money = (n: number) => fmtMoney(n, s.settings.currency, L);
 
   if (v.lines.length === 0) {
@@ -73,6 +73,7 @@ export default async function CartPage({ params }: { params: Promise<{ sub: stri
           <h2 className="font-extrabold">{t(L, "yourOrder")}</h2>
           <dl className="mt-3 space-y-2 text-sm">
             <div className="flex justify-between"><dt>{t(L, "subtotal")}</dt><dd>{money(v.totals.subtotalMinor)}</dd></div>
+            {v.promo && <div className="flex justify-between text-emerald-700"><dt>{v.promo.promo.name}</dt><dd>-{money(v.totals.discountMinor)}</dd></div>}
             {s.feat.shipping && <div className="flex justify-between"><dt>{t(L, "shipping")}</dt><dd>{v.totals.shippingMinor === 0 ? t(L, "free") : money(v.totals.shippingMinor)}</dd></div>}
             {s.feat.tax && s.settings.taxBps > 0 && <div className="flex justify-between"><dt>{t(L, "tax")}</dt><dd>{money(v.totals.taxMinor)}</dd></div>}
             <div className="flex justify-between border-t border-line pt-2 text-base font-extrabold"><dt>{t(L, "total")}</dt><dd>{money(v.totals.totalMinor)}</dd></div>

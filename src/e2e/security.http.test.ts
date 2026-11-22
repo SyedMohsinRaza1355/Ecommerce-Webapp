@@ -35,7 +35,7 @@ let idA = "", idB = "", subA = "demo-burgers", subB = "sec-b";
 let ownerA = "", ownerB = "", cashierA = "", kitchenA = "";
 let cookieOwnerA = "", cookieOwnerB = "", cookieCashierA = "", cookieKitchenA = "", cookieSA = "", orderTokenA = "", productSlugA = "zinger-burger";
 
-const ADMIN_PAGES = ["", "/orders", "/products", "/products/new", "/categories", "/discounts", "/features", "/settings", "/staff", "/activity", "/emails", "/privacy", "/security", "/payments", "/content", "/inbox", "/reports"];
+const ADMIN_PAGES = ["", "/orders", "/products", "/products/new", "/categories", "/discounts", "/features", "/settings", "/staff", "/activity", "/emails", "/privacy", "/security", "/payments", "/content", "/inbox", "/reports", "/promotions", "/setup", "/integrations", "/help"];
 
 describe.skipIf(!ENABLED)("HTTP security: authentication, authorisation and tenant isolation", () => {
   beforeAll(async () => {
@@ -114,7 +114,7 @@ describe.skipIf(!ENABLED)("HTTP security: authentication, authorisation and tena
       expect((await call(`/s/${subA}/admin/staff`, { cookie: lie })).status).toBe(307);
     });
     it("cashiers cannot open owner-only or catalogue pages; they can open orders", async () => {
-      for (const p of ["/staff", "/features", "/settings", "/discounts", "/privacy", "/products/new", "/categories", "/activity", "/payments", "/content", "/inbox", "/reports"]) {
+      for (const p of ["/staff", "/features", "/settings", "/discounts", "/privacy", "/products/new", "/categories", "/activity", "/payments", "/content", "/inbox", "/reports", "/promotions", "/setup", "/integrations"]) {
         const r = await call(`/s/${subA}/admin${p}`, { cookie: cookieCashierA });
         expect(r.status, p).toBe(307);
         expect(r.location, p).toContain("denied=1");
@@ -122,7 +122,7 @@ describe.skipIf(!ENABLED)("HTTP security: authentication, authorisation and tena
       expect((await call(`/s/${subA}/admin/orders`, { cookie: cookieCashierA })).status).toBe(200);
     });
     it("kitchen staff only see orders and stock, nothing financial", async () => {
-      for (const p of ["/staff", "/features", "/settings", "/discounts", "/privacy", "/products/new", "/categories", "/activity", "/emails", "/payments", "/content", "/inbox", "/reports"]) {
+      for (const p of ["/staff", "/features", "/settings", "/discounts", "/privacy", "/products/new", "/categories", "/activity", "/emails", "/payments", "/content", "/inbox", "/reports", "/promotions", "/setup", "/integrations"]) {
         expect((await call(`/s/${subA}/admin${p}`, { cookie: cookieKitchenA })).status, p).toBe(307);
       }
       expect((await call(`/s/${subA}/admin/orders`, { cookie: cookieKitchenA })).status).toBe(200);
@@ -351,5 +351,67 @@ describe.skipIf(!ENABLED)("HTTP: accounts, payments webhooks, exports and housek
   it("payments page needs the owner: kitchen and cashier are turned away", async () => {
     expect((await call(`${S()}/admin/payments`, { cookie: cookieOwnerA })).status).toBe(200);
     expect((await call(`${S()}/admin/payments`, { cookie: cookieCashierA })).status).toBe(307);
+  });
+});
+
+describe.skipIf(!ENABLED)("HTTP: public API, blog, unsubscribe and owner-only integration pages", () => {
+  const S = () => `/s/${subA}`;
+  it("API refuses missing, malformed, unknown-store and wrong keys with the same answer", async () => {
+    const answers = [];
+    for (const h of [undefined, "Bearer", "Bearer short", "Basic abc", "Bearer sfk_nope_" + "A".repeat(40), `Bearer sfk_${idA}_${"A".repeat(40)}`, "Bearer sfk_../../etc_" + "A".repeat(40)]) {
+      const r = await call("/api/v1/orders", { headers: h ? { authorization: h } : {} });
+      expect(r.status, String(h)).toBe(401);
+      answers.push(JSON.parse(r.body).error.code);
+      expect(r.headers["cache-control"]).toContain("no-store");
+    }
+    expect(new Set(answers).size).toBe(1);
+  });
+  it("a valid key is turned away while the API feature is off, works when on, and never leaks other data", async () => {
+    const { createApiKey } = await import("@/lib/commerce/integrations");
+    const { bumpInstance } = await import("@/lib/platform/manage");
+    const { tenantDb } = await import("@/lib/tenant/schema");
+    const ctxA = issueTenantContext(idA);
+    const k = await createApiKey(ctxA, "e2e");
+    if (!k.ok) throw new Error(k.error);
+    const auth = { authorization: `Bearer ${k.key}` };
+    const off = await call("/api/v1/orders", { headers: auth });
+    expect(off.status).toBe(403);
+    expect(JSON.parse(off.body).error.code).toBe("feature_off");
+    const db = await tenantDb(ctxA);
+    await db.collection("settings").updateOne({ instanceId: idA }, { $set: { "ownerToggles.F-100": true } });
+    await bumpInstance(idA);
+    let on = await call("/api/v1/orders?limit=5", { headers: auth });
+    for (let i = 0; i < 6 && on.status === 403; i++) { await new Promise((r) => setTimeout(r, 1500)); on = await call("/api/v1/orders?limit=5", { headers: auth }); }
+    expect(on.status).toBe(200);
+    const body = JSON.parse(on.body);
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(on.body).not.toContain("passwordHash");
+    expect(on.body).not.toContain("trackingHash");
+    expect((await call("/api/v1/products?limit=3", { headers: auth })).status).toBe(200);
+    expect((await call("/api/v1/secrets", { headers: auth })).status).toBe(404);
+    expect((await call("/api/v1/orders/abc", { headers: auth })).status).toBe(400);
+    expect((await call("/api/v1/orders/999999", { headers: auth })).status).toBe(404);
+    expect((await call("/api/v1/orders?before=garbage", { headers: auth })).status).toBe(400);
+    expect((await call("/api/v1/orders", { method: "POST", headers: auth, body: "{}" })).status).toBe(405); // read only
+    expect((await call("/api/v1/orders", { method: "DELETE", headers: auth })).status).toBe(405);
+    // a key of store A used against store B's id in the key text finds nothing
+    const forged = k.key.replace(idA, idB || "zzzzzz");
+    expect((await call("/api/v1/orders", { headers: { authorization: `Bearer ${forged}` } })).status).toBe(401);
+    await db.collection("settings").updateOne({ instanceId: idA }, { $unset: { "ownerToggles.F-100": "" } });
+    await bumpInstance(idA);
+  });
+  it("blog and unsubscribe pages behave", async () => {
+    expect((await call(`${S()}/blog`)).status).toBe(404); // blog is off by default
+    const u = await call(`${S()}/unsubscribe?e=a@b.com&t=bad`);
+    expect(u.status).toBe(200);
+    expect(u.body).toContain("not valid");
+    expect((await call(`${S()}/unsubscribe`)).status).toBe(200);
+  });
+  it("integration and promotion pages are for the owner (managers and cashiers are turned away)", async () => {
+    expect((await call(`${S()}/admin/integrations`, { cookie: cookieOwnerA })).status).toBe(200);
+    expect((await call(`${S()}/admin/integrations`, { cookie: cookieCashierA })).status).toBe(307);
+    expect((await call(`${S()}/admin/integrations`)).status).toBe(307);
+    expect((await call(`${S()}/admin/help`, { cookie: cookieCashierA })).status).toBe(200); // help is for every signed-in member
+    expect((await call(`${S()}/admin/export/ledger`, { cookie: cookieOwnerA })).status).toBe(403); // accounting export is off by default
   });
 });

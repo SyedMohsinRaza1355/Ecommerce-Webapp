@@ -4,6 +4,8 @@ import { authorize } from "@/lib/auth/rbac";
 import { products } from "@/lib/commerce/store";
 import { fmtMoney } from "@/lib/i18n";
 import { Icon } from "@/components/Icons";
+import BulkProducts from "@/components/admin/BulkProducts";
+import { bulkProductsAction } from "@/app/s/[sub]/admin/actions";
 
 export const metadata = { title: "Products" };
 
@@ -41,22 +43,7 @@ export default async function ProductsAdmin({ params, searchParams }: { params: 
           {can && <Link href={`${b}/products/new`} className="btn btn-primary mt-4">Add your first product</Link>}
         </div>
       ) : (
-        <div className="card reveal reveal-2 mt-5 overflow-x-auto p-0">
-          <table className="table">
-            <thead><tr><th>Product</th><th>Price</th><th>Stock</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
-            <tbody>
-              {rows.map((p) => (
-                <tr key={p._id}>
-                  <td className="font-semibold">{p.name}</td>
-                  <td>{fmtMoney(p.priceMinor, store.settings.currency, "en")}</td>
-                  <td>{p.trackStock ? <span className={p.stock === 0 ? "badge badge-red" : p.stock <= 5 ? "badge badge-amber" : ""}>{p.stock}</span> : <span className="text-muted">Not tracked</span>}</td>
-                  <td><span className={`badge ${p.status === "published" ? "badge-green" : "badge-slate"}`}>{p.status}</span></td>
-                  <td className="text-end">{can && <Link className="btn btn-secondary" href={`${b}/products/${p._id}`}>Edit</Link>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <div className="mt-5"><BulkProducts rows={rows.map((p) => ({ id: p._id, name: p.name, price: fmtMoney(p.priceMinor, store.settings.currency, "en"), stock: p.stock, trackStock: p.trackStock, status: p.status }))} can={can} bulk={store.eff.get("F-115")?.enabled === true} base={`${b}/products`} action={bulkProductsAction.bind(null, sub)} /></div>
       )}
     </div>
   );

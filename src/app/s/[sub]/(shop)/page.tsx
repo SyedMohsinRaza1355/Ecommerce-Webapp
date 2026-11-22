@@ -6,6 +6,7 @@ import { ProductCard } from "@/components/store/ProductCard";
 import { Icon } from "@/components/Icons";
 import { PACK_BY_ID } from "@/catalog/packs";
 import { t } from "@/lib/i18n";
+import HeroSlider from "@/components/store/HeroSlider";
 
 export default async function StoreHome({ params }: { params: Promise<{ sub: string }> }) {
   const { sub } = await params;
@@ -20,7 +21,8 @@ export default async function StoreHome({ params }: { params: Promise<{ sub: str
 
   return (
     <div>
-      {slider !== false && (
+      {slider !== false && (s.settings.hero?.length ?? 0) > 0 && <HeroSlider slides={s.settings.hero!} cta={t(L, "shop")} />}
+      {slider !== false && !(s.settings.hero?.length) && (
         <section className="hero-bg -mx-4 -mt-8 mb-10 rounded-b-3xl sm:mx-0 sm:mt-0 sm:rounded-3xl" aria-labelledby="hero-h">
           <div className="hero-grid" aria-hidden="true" />
           <div className="relative px-6 py-14 text-center sm:py-20">
@@ -57,7 +59,7 @@ export default async function StoreHome({ params }: { params: Promise<{ sub: str
         ) : (
           <ul className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
             {featured.items.map((p, i) => (
-              <ProductCard key={p._id} p={p} base={base} currency={s.settings.currency} locale={L} trackStock={s.feat.stockTracking} delay={i} />
+              <ProductCard key={p._id} p={p} base={base} currency={s.settings.currency} locale={L} trackStock={s.feat.stockTracking} backorders={s.feat.backorders} delay={i} />
             ))}
           </ul>
         )}

@@ -35,13 +35,16 @@ export default async function StoreLayout({ children, params }: { children: Reac
   let primary = isHex(store.settings.branding.primary) ? store.settings.branding.primary : "#4f46e5";
   if (store.eff.get("F-075")?.enabled === false) primary = "#4f46e5";
   const on = readableTextOn(primary);
+  const FONT_STACK = { serif: 'Georgia, "Times New Roman", serif', rounded: '"Trebuchet MS", ui-rounded, "Segoe UI", system-ui, sans-serif', mono: 'ui-monospace, "Cascadia Code", Consolas, monospace' } as const;
+  const f = store.settings.font;
+  const fontFamily = store.eff.get("F-076")?.enabled !== false && store.locale === "en" && f && f !== "system" ? FONT_STACK[f] : undefined;
   const hover = autoFixBrand(primary) === primary ? primary : autoFixBrand(primary);
   return (
     <div
       className="store-theme min-h-screen"
       lang={store.locale}
       dir={dirOf(store.locale)}
-      style={{ ["--brand-primary" as string]: primary, ["--brand-on-primary" as string]: on, ["--brand-primary-hover" as string]: hover }}
+      style={{ ["--brand-primary" as string]: primary, ["--brand-on-primary" as string]: on, ["--brand-primary-hover" as string]: hover, ...(fontFamily ? { fontFamily } : {}) }}
     >
       {children}
     </div>

@@ -20,7 +20,7 @@ export default async function CheckoutPage({ params }: { params: Promise<{ sub: 
   const L = s.locale;
   const base = `/s/${sub}`;
   const cartId = (await cookies()).get(`cart_${s.instance._id}`)?.value;
-  const v = await cartView(s.ctx, cartId, pricingConfig(s.settings, s.feat), s.feat.stockTracking);
+  const v = await cartView(s.ctx, cartId, pricingConfig(s.settings, s.feat), s.feat.stockTracking, { autoPromos: s.feat.autoPromos, flashSales: s.feat.flashSales, backorders: s.feat.backorders });
   if (v.lines.length === 0 || v.hasProblems) redirect(`${base}/cart`);
   const money = (n: number) => fmtMoney(n, s.settings.currency, L);
   const methods = checkoutMethods(await getPaymentConfig(s.ctx), s.feat, { card: t(L, "payCard"), cod: t(L, "payCod") });
@@ -50,11 +50,12 @@ export default async function CheckoutPage({ params }: { params: Promise<{ sub: 
             </ul>
             <dl className="mt-3 space-y-1 border-t border-line pt-3 text-sm">
               <div className="flex justify-between"><dt>{t(L, "subtotal")}</dt><dd>{money(v.totals.subtotalMinor)}</dd></div>
+              {v.promo && <div className="flex justify-between text-emerald-700"><dt>{v.promo.promo.name}</dt><dd>-{money(v.totals.discountMinor)}</dd></div>}
               {s.feat.shipping && <div className="flex justify-between"><dt>{t(L, "shipping")}</dt><dd>{v.totals.shippingMinor === 0 ? t(L, "free") : money(v.totals.shippingMinor)}</dd></div>}
               {s.feat.tax && s.settings.taxBps > 0 && <div className="flex justify-between"><dt>{t(L, "tax")}</dt><dd>{money(v.totals.taxMinor)}</dd></div>}
               <div className="flex justify-between text-base font-extrabold"><dt>{t(L, "total")}</dt><dd>{money(v.totals.totalMinor)}</dd></div>
             </dl>
-            <p className="hint mt-3">Discounts are applied when you place the order.</p>
+            <p className="hint mt-3">Discount codes are applied when you place the order.{s.feat.zones && (s.settings.zones?.length ?? 0) > 0 ? " The delivery fee depends on your city and is final when you place the order." : ""}</p>
             <Link href={`${base}/cart`} className="mt-2 block text-sm underline">{t(L, "cart")}</Link>
           </aside>
         </div>

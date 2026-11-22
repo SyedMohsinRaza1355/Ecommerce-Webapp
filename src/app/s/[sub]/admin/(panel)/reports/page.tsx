@@ -73,9 +73,11 @@ export default async function ReportsPage({ params, searchParams }: { params: Pr
         {store.eff.get("F-096")?.enabled === false ? <p className="mt-2 text-sm text-muted">Data export is turned off in Features.</p> : (
           <p className="mt-3 flex flex-wrap gap-2">
             {(["orders", "products", "customers"] as const).map((k) => <a key={k} className="btn btn-secondary" href={`${base}/export/${k}`}>{k[0].toUpperCase() + k.slice(1)} (CSV)</a>)}
+            {on("F-101") && <a className="btn btn-secondary" href={`${base}/export/ledger`}>Accounting ledger (CSV)</a>}
             {owner && on("F-111") && <a className="btn btn-secondary" href={`${base}/backup`}>Full backup (JSON)</a>}
           </p>
         )}
+        {!on("F-101") && <p className="hint mt-2">Turn on &quot;Accounting ledger export&quot; in Features for a sales and refunds ledger your accountant can use.</p>}
         {owner && !on("F-111") && <p className="hint mt-2">Turn on &quot;Store backup download&quot; in Features to get a complete backup file.</p>}
       </section>
 

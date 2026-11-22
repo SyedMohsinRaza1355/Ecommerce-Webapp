@@ -3,6 +3,7 @@ import { tenantDb } from "@/lib/tenant/schema";
 import type { TenantContext } from "@/lib/tenant/context";
 import type { Product } from "./types";
 import { computeTotals, type PricingConfig, type Totals } from "./pricing";
+import { bestPromo, listPromos, type PromoResult } from "./rules";
 
 type CartDoc = { _id: string; instanceId: string; items: { productId: string; qty: number }[]; updatedAt: Date };
 
@@ -32,7 +33,7 @@ export async function setCartQty(ctx: TenantContext, cartId: string, productId: 
   const existing = cur.find((i) => i.productId === productId)?.qty ?? 0;
   let next = mode === "add" ? existing + qty : qty;
   if (next > MAX_LINE_QTY) next = MAX_LINE_QTY;
-  if (p.trackStock && next > p.stock) {
+  if (p.trackStock && !p.backorder && next > p.stock) {
     if (p.stock <= 0) return { ok: false, error: "This item is out of stock." };
     next = p.stock; // clamp and tell the buyer
   }
@@ -50,7 +51,7 @@ export async function clearCart(ctx: TenantContext, cartId: string | undefined) 
 export type CartLine = { product: Product; qty: number; lineMinor: number; problem?: string };
 
 /** Joins live product data; unpublished or sold-out items are flagged, prices always come from the database. */
-export async function cartView(ctx: TenantContext, cartId: string | undefined, cfg: PricingConfig, trackStock: boolean) {
+export async function cartView(ctx: TenantContext, cartId: string | undefined, cfg: PricingConfig, trackStock: boolean, opts: { autoPromos?: boolean; flashSales?: boolean; backorders?: boolean; now?: Date } = {}) {
   const items = await getCartItems(ctx, cartId);
   const db = await tenantDb(ctx);
   const ids = items.map((i) => i.productId);
@@ -62,10 +63,13 @@ export async function cartView(ctx: TenantContext, cartId: string | undefined, c
     if (!p) continue;
     let problem: string | undefined;
     if (p.status !== "published") problem = "unavailable";
-    else if (trackStock && p.trackStock && p.stock < i.qty) problem = p.stock <= 0 ? "soldout" : "lowstock";
+    else if (trackStock && p.trackStock && !(opts.backorders && p.backorder) && p.stock < i.qty) problem = p.stock <= 0 ? "soldout" : "lowstock";
     lines.push({ product: p, qty: i.qty, lineMinor: p.priceMinor * i.qty, problem });
   }
   const good = lines.filter((l) => !l.problem);
-  const totals: Totals = computeTotals(good.map((l) => ({ productId: l.product._id, name: l.product.name, unitMinor: l.product.priceMinor, qty: l.qty })), cfg);
-  return { lines, totals, count: lines.reduce((n, l) => n + l.qty, 0), hasProblems: lines.some((l) => l.problem) };
+  const promo: PromoResult = opts.autoPromos || opts.flashSales
+    ? bestPromo(await listPromos(ctx), good.map((l) => ({ productId: l.product._id, categoryId: l.product.categoryId ?? null, lineMinor: l.lineMinor })), opts.now ?? new Date(), { auto: !!opts.autoPromos, flash: !!opts.flashSales })
+    : null;
+  const totals: Totals = computeTotals(good.map((l) => ({ productId: l.product._id, name: l.product.name, unitMinor: l.product.priceMinor, qty: l.qty })), { ...cfg, fixedDiscountMinor: promo?.discountMinor ?? 0 });
+  return { lines, totals, promo, count: lines.reduce((n, l) => n + l.qty, 0), hasProblems: lines.some((l) => l.problem) };
 }

@@ -2,7 +2,8 @@ import { guard } from "@/lib/commerce/guard";
 import { tenantDb } from "@/lib/tenant/schema";
 import { fmtDate } from "@/lib/i18n";
 import { ActionButton } from "@/components/admin/Forms";
-import { reviewModerateAction } from "@/app/s/[sub]/admin/actions";
+import { AF } from "@/components/admin/Forms";
+import { reviewModerateAction, campaignAction } from "@/app/s/[sub]/admin/actions";
 
 export const metadata = { title: "Inbox" };
 
@@ -59,7 +60,15 @@ export default async function InboxPage({ params }: { params: Promise<{ sub: str
       <section className="card" aria-labelledby="nl">
         <h2 id="nl" className="text-lg font-extrabold">Newsletter</h2>
         {store.eff.get("F-058")?.enabled !== true ? <p className="mt-2 text-sm text-muted">Turn on &quot;Newsletter signup&quot; in Features to collect email addresses.</p> : (
-          <p className="mt-2 text-sm">{subs} subscriber{subs === 1 ? "" : "s"}. <a className="underline" href={`/s/${sub}/admin/export/newsletter`}>Download the list (CSV)</a></p>
+          <>
+            <p className="mt-2 text-sm">{subs} subscriber{subs === 1 ? "" : "s"}. <a className="underline" href={`/s/${sub}/admin/export/newsletter`}>Download the list (CSV)</a></p>
+            <h3 className="mt-4 font-extrabold">Send a news email</h3>
+            <p className="text-sm text-muted">Goes to up to 200 subscribers at once, with an unsubscribe link in every email. Two sends per hour.</p>
+            <AF action={campaignAction.bind(null, sub)} submit="Send to subscribers" className="mt-2">
+              <label className="field"><span>Subject</span><input className="input" name="subject" required maxLength={120} /></label>
+              <label className="field"><span>Message</span><textarea className="input min-h-32" name="message" required maxLength={5000} /></label>
+            </AF>
+          </>
         )}
       </section>
     </div>

@@ -38,7 +38,7 @@ export default async function ContentPage({ params }: { params: Promise<{ sub: s
                 {pages.map((p) => (
                   <li key={p._id} className="rounded-xl p-3 ring-1 ring-line">
                     <details>
-                      <summary className="cursor-pointer font-semibold">{p.title} <span className={`badge ms-2 ${p.published ? "badge-green" : "badge-slate"}`}>{p.published ? "Published" : "Draft"}</span> <span className="text-xs text-muted" dir="ltr">/p/{p.slug}</span></summary>
+                      <summary className="cursor-pointer font-semibold">{p.title} <span className={`badge ms-2 ${p.published ? "badge-green" : "badge-slate"}`}>{p.published ? "Published" : "Draft"}</span> <span className="text-xs text-muted" dir="ltr">{p.kind === "post" ? "Blog: " : ""}/p/{p.slug}</span></summary>
                       <AF action={pageAction.bind(null, sub, p._id)} submit="Save page" className="mt-3">
                         <PageFields p={p} />
                       </AF>
@@ -57,9 +57,12 @@ export default async function ContentPage({ params }: { params: Promise<{ sub: s
   );
 }
 
-function PageFields({ p }: { p?: { title: string; slug: string; body: string; published: boolean; inFooter: boolean } }) {
+function PageFields({ p }: { p?: { title: string; slug: string; body: string; kind?: string; published: boolean; inFooter: boolean } }) {
   return (
     <>
+      <label className="field"><span>Type</span>
+        <select className="input" name="kind" defaultValue={p?.kind ?? "page"}><option value="page">Page (About, Delivery, Returns)</option><option value="post">Blog post (needs &quot;Blog&quot; turned on in Features)</option></select>
+      </label>
       <label className="field"><span>Title</span><input className="input" name="title" defaultValue={p?.title} required maxLength={80} /></label>
       <label className="field"><span>Web address (optional)</span><input className="input" name="slug" defaultValue={p?.slug} maxLength={60} dir="ltr" placeholder="about-us" /></label>
       <label className="field"><span>Text</span><textarea className="input min-h-40" name="body" defaultValue={p?.body} maxLength={20000} /><p className="hint">Plain text. A blank line starts a new paragraph.</p></label>

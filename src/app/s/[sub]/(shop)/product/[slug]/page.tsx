@@ -41,7 +41,8 @@ export default async function ProductPage({ params }: { params: Promise<{ sub: s
   const related = s.eff.get("F-010")?.enabled === true && p.categoryId
     ? (await products.find(s.ctx, { categoryId: p.categoryId, status: "published", _id: { $ne: p._id } } as never, 4))
     : [];
-  const sold = s.feat.stockTracking && p.trackStock && p.stock <= 0;
+  const back = Boolean(s.feat.backorders && p.backorder);
+  const sold = s.feat.stockTracking && p.trackStock && p.stock <= 0 && !back;
   const jsonLd = s.eff.get("F-140")?.enabled
     ? {
         "@context": "https://schema.org", "@type": "Product", name: p.name, description: p.description, ...(p.imageUrl ? { image: p.imageUrl } : {}),
@@ -62,10 +63,10 @@ export default async function ProductPage({ params }: { params: Promise<{ sub: s
             {p.compareAtMinor ? <s className="text-muted">{fmtMoney(p.compareAtMinor, s.settings.currency, L)}</s> : null}
           </p>
           <p className="mt-2">
-            {sold ? <span className="badge badge-red">{t(L, "outOfStock")}</span> : s.feat.stockTracking && p.trackStock && p.stock <= 5 ? <span className="badge badge-amber">{t(L, "onlyLeft", { n: p.stock })}</span> : <span className="badge badge-green">{t(L, "inStock")}</span>}
+            {sold ? <span className="badge badge-red">{t(L, "outOfStock")}</span> : s.feat.stockTracking && p.trackStock && p.stock <= 5 && !(back && p.stock <= 0) ? <span className="badge badge-amber">{t(L, "onlyLeft", { n: p.stock })}</span> : <span className={`badge ${back && p.stock <= 0 ? "badge-amber" : "badge-green"}`}>{back && p.stock <= 0 ? "Available on backorder: ships when restocked" : t(L, "inStock")}</span>}
           </p>
           <div className="mt-6">
-            <AddToCart action={addToCartAction.bind(null, sub, p._id)} label={t(L, "addToCart")} soldOut={sold} max={s.feat.stockTracking && p.trackStock ? p.stock : 99} />
+            <AddToCart action={addToCartAction.bind(null, sub, p._id)} label={t(L, "addToCart")} soldOut={sold} max={s.feat.stockTracking && p.trackStock && !back ? p.stock : 99} />
           </div>
           {wishOn && (
             <div className="mt-4">
@@ -108,7 +109,7 @@ export default async function ProductPage({ params }: { params: Promise<{ sub: s
       {related.length > 0 && (
         <section className="mt-12" aria-labelledby="rl">
           <h2 id="rl" className="text-xl font-extrabold">You may also like</h2>
-          <ul className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">{related.map((r, i) => <ProductCard key={r._id} p={r} base={base} currency={s.settings.currency} locale={L} trackStock={s.feat.stockTracking} delay={i} />)}</ul>
+          <ul className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">{related.map((r, i) => <ProductCard key={r._id} p={r} base={base} currency={s.settings.currency} locale={L} trackStock={s.feat.stockTracking} backorders={s.feat.backorders} delay={i} />)}</ul>
         </section>
       )}
       {jsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />}

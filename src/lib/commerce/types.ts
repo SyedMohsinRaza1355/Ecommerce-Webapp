@@ -12,7 +12,17 @@ export type Settings = {
   freeShippingOverMinor: number | null;
   contactEmail: string;
   announcement?: string;
+  /** weekly opening hours (F-018); a missing day means "closed" only when at least one day is set */
+  hours?: Partial<Record<Day, { open: string; close: string } | null>>;
+  /** delivery fee by city (F-071) */
+  zones?: { id: string; name: string; cities: string[]; feeMinor: number }[];
+  font?: "system" | "serif" | "rounded" | "mono";
+  /** homepage banner slides (F-084) */
+  hero?: { title: string; text: string; imageUrl: string; link: string }[];
 };
+
+export type Day = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+export const DAYS: Day[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
 export const DEFAULT_SETTINGS: Omit<Settings, "instanceId" | "branding"> & { branding: Settings["branding"] } = {
   configVersion: 1,
@@ -38,6 +48,8 @@ export type Product = {
   compareAtMinor?: number | null;
   categoryId?: string | null;
   imageUrl?: string;
+  /** can be ordered even when stock is 0 (F-022) */
+  backorder?: boolean;
   stock: number;
   trackStock: boolean;
   status: "draft" | "published";
@@ -58,6 +70,7 @@ export type Order = {
   subtotalMinor: number;
   discountMinor: number;
   discountCode?: string;
+  promo?: { id: string; name: string };
   shippingMinor: number;
   taxMinor: number;
   totalMinor: number;

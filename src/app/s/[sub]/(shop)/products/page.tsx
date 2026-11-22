@@ -41,7 +41,7 @@ export default async function ProductsPage({ params, searchParams }: { params: P
       ) : (
         <ul className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
           {res.items.map((p, i) => (
-            <ProductCard key={p._id} p={p} base={base} currency={s.settings.currency} locale={L} trackStock={s.feat.stockTracking} delay={i} heading="h2" />
+            <ProductCard key={p._id} p={p} base={base} currency={s.settings.currency} locale={L} trackStock={s.feat.stockTracking} backorders={s.feat.backorders} delay={i} heading="h2" />
           ))}
         </ul>
       )}

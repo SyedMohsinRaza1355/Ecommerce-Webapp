@@ -22,13 +22,16 @@ export default async function AdminLayout({ children, params }: { children: Reac
     ...(can("catalog.manage") || can("inventory.view") ? [{ href: `${b}/products`, label: "Products", icon: Icon.box }, ...(can("catalog.manage") ? [{ href: `${b}/categories`, label: "Categories", icon: Icon.list }] : [])] : []),
     ...(can("catalog.manage") ? [{ href: `${b}/content`, label: "Content", icon: Icon.globe }, { href: `${b}/inbox`, label: "Inbox", icon: Icon.users }] : []),
     ...(can("reports.view") ? [{ href: `${b}/reports`, label: "Reports", icon: Icon.list }] : []),
-    ...(can("promotions.manage") ? [{ href: `${b}/discounts`, label: "Discounts", icon: Icon.tag }] : []),
+    ...(can("promotions.manage") ? [{ href: `${b}/discounts`, label: "Discounts", icon: Icon.tag }, { href: `${b}/promotions`, label: "Promotions", icon: Icon.tag }] : []),
+    ...(can("branding.edit") ? [{ href: `${b}/setup`, label: "Store setup", icon: Icon.store }] : []),
+    ...(can("settings.commerce") ? [{ href: `${b}/integrations`, label: "Integrations", icon: Icon.switch }] : []),
     ...(can("payments.manage") ? [{ href: `${b}/payments`, label: "Payments", icon: Icon.lock }] : []),
     ...(can("toggle.enable") ? [{ href: `${b}/features`, label: "Features", icon: Icon.switch }] : []),
     ...(can("branding.edit") ? [{ href: `${b}/settings`, label: "Settings", icon: Icon.store }] : []),
     ...(can("staff.manage") ? [{ href: `${b}/staff`, label: "Staff", icon: Icon.users }] : []),
     ...(can("activity.view") ? [{ href: `${b}/activity`, label: "Activity", icon: Icon.list }, { href: `${b}/emails`, label: "Messages", icon: Icon.list }] : []),
     ...(can("privacy.manage") ? [{ href: `${b}/privacy`, label: "Privacy", icon: Icon.shield }] : []),
+    { href: `${b}/help`, label: "Help", icon: Icon.shield },
     { href: `/s/${sub}`, label: "View store", icon: Icon.globe },
   ];
 

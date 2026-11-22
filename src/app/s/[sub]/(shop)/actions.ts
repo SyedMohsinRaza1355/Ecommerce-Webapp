@@ -131,3 +131,10 @@ export async function contactAction(sub: string, _p: AcctState, form: FormData):
   const r = await saveContactMessage(s.ctx, { ...values, honeypot: String(form.get("website") ?? "") }, ip, s.settings.contactEmail || null, s.settings.branding.storeName || s.instance.name);
   return r.ok ? { message: "Thank you! Your message was sent. We will reply by email." } : { error: r.error, values };
 }
+
+export async function unsubscribeAction(sub: string, email: string, token: string) {
+  const s = await okStore(sub);
+  const { unsubscribe } = await import("@/lib/commerce/extras");
+  const ok = await unsubscribe(s.ctx, email, token);
+  redirect(`/s/${sub}/unsubscribe?${ok ? "done=1" : "bad=1"}`);
+}

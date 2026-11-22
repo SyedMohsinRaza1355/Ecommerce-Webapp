@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { loadStore } from "@/lib/commerce/load";
 import { getPageBySlug } from "@/lib/commerce/extras";
+import { fmtDate } from "@/lib/i18n";
 
 async function find(sub: string, slug: string) {
   const s = await loadStore(sub);
@@ -24,6 +25,7 @@ export default async function CustomPage({ params }: { params: Promise<{ sub: st
   return (
     <article className="mx-auto max-w-2xl">
       <h1 className="text-3xl font-extrabold tracking-tight">{r.page.title}</h1>
+      {r.page.kind === "post" && r.page.createdAt && <p className="mt-1 text-sm text-muted">{fmtDate(r.page.createdAt, r.s.locale)}</p>}
       <div className="mt-4 space-y-4 leading-relaxed urdu-line">
         {paragraphs.map((p, i) => <p key={i} className="whitespace-pre-line">{p}</p>)}
       </div>

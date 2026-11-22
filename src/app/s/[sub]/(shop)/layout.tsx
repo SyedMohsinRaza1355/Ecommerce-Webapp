@@ -10,6 +10,7 @@ import { CookieNotice } from "@/components/store/Bits";
 import { RegisterSW } from "@/components/store/RegisterSW";
 import { setLocaleAction, newsletterAction } from "./actions";
 import { listPages } from "@/lib/commerce/extras";
+import { hasHours, isOpenNow } from "@/lib/commerce/rules";
 import AcctForm from "@/components/store/AcctForm";
 
 export default async function ShopLayout({ children, params }: { children: ReactNode; params: Promise<{ sub: string }> }) {
@@ -23,9 +24,12 @@ export default async function ShopLayout({ children, params }: { children: React
   const me = accountsOn ? await currentCustomer(store) : null;
   const count = items.reduce((n, i) => n + i.qty, 0);
   const base = `/s/${sub}`;
-  const footerPages = store.eff.get("F-078")?.enabled !== false && store.eff.get("F-081")?.enabled !== false ? (await listPages(store.ctx, true)).filter((p) => p.inFooter) : [];
+  const footerPages = store.eff.get("F-078")?.enabled !== false && store.eff.get("F-081")?.enabled !== false ? (await listPages(store.ctx, true, "page")).filter((p) => p.inFooter) : [];
+  const blogOn = store.eff.get("F-079")?.enabled === true && store.eff.get("F-078")?.enabled !== false && (await listPages(store.ctx, true, "post")).length > 0;
   const newsletterOn = store.eff.get("F-058")?.enabled === true;
   const contactOn = store.eff.get("F-080")?.enabled !== false;
+  const hoursOn = store.eff.get("F-018")?.enabled !== false && hasHours(store.settings.hours);
+  const closedNow = hoursOn && !isOpenNow(store.settings.hours);
   const showMaintenance = store.eff.get("F-110")?.enabled;
   const bilingual = store.eff.get("F-085")?.enabled !== false && store.eff.get("F-086")?.enabled !== false;
 
@@ -66,6 +70,7 @@ export default async function ShopLayout({ children, params }: { children: React
         </div>
       </header>
       {store.settings.announcement && store.eff.get("F-061")?.enabled !== false && <div role="status" className="px-4 py-2 text-center text-sm font-semibold" style={{ background: "var(--brand-primary)", color: "var(--brand-on-primary)" }}>{store.settings.announcement}</div>}
+      {closedNow && <div role="status" className="bg-slate-800 px-4 py-2 text-center text-sm text-white">We are closed right now. You can look around, but orders open again during our opening hours.</div>}
       {showMaintenance && <div role="status" className="bg-amber-100 px-4 py-2 text-center text-sm text-amber-900">This store is in maintenance mode. You can browse, but ordering is paused for now.</div>}
       <main id="main" className="mx-auto max-w-6xl px-4 py-8">{children}</main>
       <footer className="border-t border-line bg-white py-8 text-sm text-muted">
@@ -73,6 +78,7 @@ export default async function ShopLayout({ children, params }: { children: React
           <p>&copy; {new Date().getFullYear()} {name}</p>
           <p className="flex flex-wrap gap-4">
             {footerPages.map((p) => <Link key={p._id} href={`${base}/p/${p.slug}`} className="underline">{p.title}</Link>)}
+            {blogOn && <Link href={`${base}/blog`} className="underline">Blog</Link>}
             {contactOn && <Link href={`${base}/contact`} className="underline">Contact</Link>}
             <Link href="/privacy" className="underline">{t(L, "privacy")}</Link>
             <Link href="/terms" className="underline">{t(L, "terms")}</Link>

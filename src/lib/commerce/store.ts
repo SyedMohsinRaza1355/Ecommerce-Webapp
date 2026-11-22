@@ -88,6 +88,7 @@ export const ProductInput = z.object({
   imageUrl: httpsUrl.default(""),
   stock: z.coerce.number().int("Stock must be a whole number").min(0).max(1_000_000),
   trackStock: z.boolean().default(true),
+  backorder: z.boolean().default(false),
   status: z.enum(["draft", "published"]),
 });
 
@@ -118,7 +119,7 @@ export async function createProduct(ctx: TenantContext, input: ProductForm, curr
   await products.insert(ctx, {
     _id: id, name: input.name, slug: await uniqueSlug(ctx, slugify(input.name)), description: input.description,
     priceMinor, compareAtMinor: compare, categoryId: input.categoryId || null, imageUrl: input.imageUrl,
-    stock: input.stock, trackStock: input.trackStock, status: input.status, createdAt: now, updatedAt: now,
+    stock: input.stock, trackStock: input.trackStock, backorder: input.backorder, status: input.status, createdAt: now, updatedAt: now,
   });
   return { ok: true, id };
 }
@@ -138,7 +139,7 @@ export async function updateProduct(ctx: TenantContext, id: string, input: Produ
   if (input.categoryId && !(await categories.findById(ctx, input.categoryId))) return { ok: false, error: "Choose a valid category" };
   await products.updateById(ctx, id, {
     name: input.name, description: input.description, priceMinor, compareAtMinor: compare, categoryId: input.categoryId || null,
-    imageUrl: input.imageUrl, stock: input.stock, trackStock: input.trackStock, status: input.status, updatedAt: new Date(),
+    imageUrl: input.imageUrl, stock: input.stock, trackStock: input.trackStock, backorder: input.backorder, status: input.status, updatedAt: new Date(),
     slug: cur.name === input.name ? cur.slug : await uniqueSlug(ctx, slugify(input.name), id),
   });
   return { ok: true };

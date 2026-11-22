@@ -10,6 +10,8 @@ import { signBody, verifySignature, type GatewayEvent } from "./gateway";
 import { enqueueEmail, processOutbox } from "./outbox";
 import { formatMajor, money } from "@/lib/money/money";
 import { notifyLowStock } from "./extras";
+import { emitWebhook } from "./integrations";
+import { bestPromo, hasHours, isOpenNow, describeHours, listPromos, zoneFor } from "./rules";
 import { getPaymentConfig, getStripeKey, getStripeWebhookSecret } from "@/lib/payments/config";
 import { createCheckoutSession, createRefund, retrieveCheckoutSession, verifyStripeSignature } from "@/lib/payments/stripe";
 import type { Order, Product, Settings } from "./types";
@@ -38,7 +40,7 @@ export async function trackUrlFor(ctx: TenantContext, token: string): Promise<st
   return `${await storeUrlFor(ctx)}/order/${token}`;
 }
 
-export type Features = { shipping: boolean; freeShipping: boolean; tax: boolean; discounts: boolean; cod: boolean; card: boolean; emails: boolean; stockTracking: boolean; manualBank?: boolean; wallet?: boolean; lowStock?: boolean; maintenance?: boolean };
+export type Features = { shipping: boolean; freeShipping: boolean; tax: boolean; discounts: boolean; cod: boolean; card: boolean; emails: boolean; stockTracking: boolean; manualBank?: boolean; wallet?: boolean; lowStock?: boolean; maintenance?: boolean; autoPromos?: boolean; flashSales?: boolean; couponLimits?: boolean; backorders?: boolean; hours?: boolean; zones?: boolean };
 
 export type PlaceInput = {
   items: { productId: string; qty: number }[];
@@ -48,6 +50,8 @@ export type PlaceInput = {
   idempotencyKey: string;
   discountCode?: string;
   customerId?: string;
+  /** lets tests pretend it is another time of day */
+  now?: Date;
 };
 
 export type PlaceResult =
@@ -108,6 +112,7 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
   }
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(input.idempotencyKey)) return { ok: false, error: "Invalid request. Please reload the page.", code: "validation" };
   if (feat.maintenance) return { ok: false, error: "The store is temporarily closed for maintenance. Please try again soon.", code: "validation" };
+  if (feat.hours && hasHours(settings.hours) && !isOpenNow(settings.hours, input.now)) return { ok: false, error: `We are closed right now and cannot take orders. Opening hours: ${describeHours(settings.hours)}.`, code: "validation" };
   const bad = validateCustomer(input.customer);
   if (bad) return { ok: false, error: bad, code: "validation" };
   const cfg = await getPaymentConfig(ctx);
@@ -139,8 +144,9 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
   if (found.length !== qtyBy.size) return { ok: false, error: "Some items in your cart are no longer available.", code: "stock" };
 
   const lines: Line[] = found.map((p) => ({ productId: p._id, name: p.name, unitMinor: p.priceMinor, qty: qtyBy.get(p._id)! }));
+  const counts = (p: Product) => feat.stockTracking && p.trackStock && !(feat.backorders && p.backorder);
   for (const p of found) {
-    if (feat.stockTracking && p.trackStock && p.stock < qtyBy.get(p._id)!) return { ok: false, error: `Only ${p.stock} of "${p.name}" left.`, code: "stock" };
+    if (counts(p) && p.stock < qtyBy.get(p._id)!) return { ok: false, error: `Only ${p.stock} of "${p.name}" left.`, code: "stock" };
   }
 
   // discount code (F-053)
@@ -153,17 +159,31 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
     if (!d || (d.expiresAt && d.expiresAt < new Date()) || (d.maxUses !== null && d.used >= d.maxUses)) {
       return { ok: false, error: "That discount code is not valid.", code: "discount" };
     }
+    const per = (d as { perCustomer?: number | null }).perCustomer;
+    if (feat.couponLimits && per) {
+      if (!input.customerId) return { ok: false, error: "Sign in to your account to use this code.", code: "discount" };
+      if ((await orders.count(ctx, { customerId: input.customerId, discountCode: c, state: { $ne: "cancelled" } } as never)) >= per) return { ok: false, error: per === 1 ? "You have already used this code." : `This code can be used ${per} times per customer.`, code: "discount" };
+    }
     discountBps = d.percentBps;
     code = c;
   }
 
+  // automatic promotion (F-054, F-056): used only when it beats the code; the code is then not consumed
+  const subtotalNow = lines.reduce((n, l) => n + l.unitMinor * l.qty, 0);
+  const promo = feat.autoPromos || feat.flashSales
+    ? bestPromo(await listPromos(ctx), found.map((p) => ({ productId: p._id, categoryId: p.categoryId ?? null, lineMinor: p.priceMinor * qtyBy.get(p._id)! })), input.now ?? new Date(), { auto: !!feat.autoPromos, flash: !!feat.flashSales })
+    : null;
+  let fixedDiscount = 0;
+  if (promo && promo.discountMinor > Math.round((subtotalNow * discountBps) / 10000)) { fixedDiscount = promo.discountMinor; discountBps = 0; code = undefined; }
+  const zone = feat.zones ? zoneFor(settings.zones, input.customer.city) : null;
+
   const totals = computeTotals(lines, {
     currency: settings.currency, taxBps: settings.taxBps, taxEnabled: feat.tax,
-    shippingFlatMinor: feat.shipping ? settings.shippingFlatMinor : 0,
-    freeShippingOverMinor: feat.freeShipping ? settings.freeShippingOverMinor : null, discountBps,
+    shippingFlatMinor: feat.shipping ? (zone ? zone.feeMinor : settings.shippingFlatMinor) : 0,
+    freeShippingOverMinor: feat.freeShipping ? settings.freeShippingOverMinor : null, discountBps, fixedDiscountMinor: fixedDiscount,
   });
 
-  const tracked = found.map((p) => ({ productId: p._id, qty: qtyBy.get(p._id)!, tracked: feat.stockTracking && p.trackStock }));
+  const tracked = found.map((p) => ({ productId: p._id, qty: qtyBy.get(p._id)!, tracked: counts(p) }));
   const failed = await reserveStock(ctx, tracked);
   if (failed) {
     const name = found.find((p) => p._id === failed)?.name ?? "an item";
@@ -191,7 +211,7 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
   const order: Order = {
     _id: id, orderNo, idempotencyKey: input.idempotencyKey, trackingHash: sha(trackingTokenFor(ctx.instanceId, id)),
     items: lines.map((l) => ({ productId: l.productId, name: l.name, unitMinor: l.unitMinor, qty: l.qty, lineMinor: l.unitMinor * l.qty })),
-    currency: settings.currency, subtotalMinor: totals.subtotalMinor, discountMinor: totals.discountMinor, ...(code ? { discountCode: code } : {}),
+    currency: settings.currency, subtotalMinor: totals.subtotalMinor, discountMinor: totals.discountMinor, ...(code ? { discountCode: code } : {}), ...(fixedDiscount && promo ? { promo: { id: promo.promo._id, name: promo.promo.name } } : {}),
     shippingMinor: totals.shippingMinor, taxMinor: totals.taxMinor, totalMinor: totals.totalMinor,
     customer: { ...input.customer, name: input.customer.name.trim(), email: input.customer.email.trim().toLowerCase() },
     state: cod ? "confirmed" : "pending",
@@ -226,7 +246,8 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
     });
     await processOutbox(ctx).catch(() => undefined);
   }
-  return { ok: true, orderId: id, orderNo, trackingToken, needsPayment: !cod };
+  await emitWebhook(ctx, "order.created", order);
+  return { ok: true, orderId: id, orderNo, trackingToken, needsPayment: input.method !== "cod" };
 }
 
 // ---------------- gateway webhook ----------------
@@ -293,6 +314,7 @@ export async function capturePayment(ctx: TenantContext, order: Order, by: strin
   const store = storeNameOf ? await storeNameOf(ctx.instanceId) : "Our store";
   await enqueueEmail(ctx, "order.paid", order.customer.email, { orderNo: order.orderNo, storeName: store, trackUrl: await trackUrlFor(ctx, trackingTokenFor(ctx.instanceId, order._id)) });
   await processOutbox(ctx).catch(() => undefined);
+  await emitWebhook(ctx, "order.paid", r as unknown as Order);
   return true;
 }
 
@@ -345,6 +367,8 @@ export async function transitionOrder(ctx: TenantContext, orderId: string, to: O
     await enqueueEmail(ctx, "order.status", order.customer.email, { orderNo: order.orderNo, storeName: notify.storeName, status: to, trackUrl: await trackUrlFor(ctx, trackingTokenFor(ctx.instanceId, orderId)) });
   }
   await processOutbox(ctx).catch(() => undefined);
+  const fresh = await orders.findById(ctx, orderId);
+  if (fresh) await emitWebhook(ctx, "order.status", fresh);
   return { ok: true };
 }
 
@@ -388,6 +412,8 @@ export async function refundOrder(ctx: TenantContext, orderId: string, amountMin
     await enqueueEmail(ctx, "order.refunded", order.customer.email, { orderNo: order.orderNo, storeName: notify.storeName, amount: `${order.currency} ${formatMajor(money(amountMinor, order.currency))}` });
     await processOutbox(ctx).catch(() => undefined);
   }
+  const fresh = await orders.findById(ctx, orderId);
+  if (fresh) await emitWebhook(ctx, "order.refunded", fresh);
   return { ok: true };
 }
 

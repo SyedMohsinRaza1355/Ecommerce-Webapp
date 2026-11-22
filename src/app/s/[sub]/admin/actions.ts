@@ -59,7 +59,7 @@ export async function logoutAction(sub: string) {
 function productFields(form: FormData) {
   return ProductInput.safeParse({
     name: fd(form, "name"), description: fd(form, "description"), price: fd(form, "price"), compareAt: fd(form, "compareAt"),
-    categoryId: fd(form, "categoryId"), imageUrl: fd(form, "imageUrl"), stock: fd(form, "stock") || "0", trackStock: form.get("trackStock") === "on", status: fd(form, "status") || "draft",
+    categoryId: fd(form, "categoryId"), imageUrl: fd(form, "imageUrl"), stock: fd(form, "stock") || "0", trackStock: form.get("trackStock") === "on", backorder: form.get("backorder") === "on", status: fd(form, "status") || "draft",
   });
 }
 
@@ -164,11 +164,14 @@ export async function discountAction(sub: string, _p: AdminState, form: FormData
   const maxRaw = fd(form, "maxUses").trim();
   const maxUses = maxRaw === "" ? null : parseInt(maxRaw, 10);
   if (maxUses !== null && (!Number.isInteger(maxUses) || maxUses < 1)) return { error: "Maximum uses must be a whole number of 1 or more." };
+  const perRaw = fd(form, "perCustomer").trim();
+  const perCustomer = perRaw === "" ? null : parseInt(perRaw, 10);
+  if (perCustomer !== null && (!Number.isInteger(perCustomer) || perCustomer < 1 || perCustomer > 100)) return { error: "Uses per customer must be a whole number from 1 to 100." };
   const exp = fd(form, "expires");
   const expiresAt = exp ? new Date(exp + "T23:59:59Z") : null;
   if (expiresAt && Number.isNaN(expiresAt.getTime())) return { error: "Enter a valid expiry date." };
   try {
-    await db.collection("discounts").insertOne({ instanceId: g.store.ctx.instanceId, code, percentBps: Math.round(pct * 100), active: true, maxUses, used: 0, expiresAt, createdAt: new Date() } as never);
+    await db.collection("discounts").insertOne({ instanceId: g.store.ctx.instanceId, code, percentBps: Math.round(pct * 100), active: true, maxUses, perCustomer, used: 0, expiresAt, createdAt: new Date() } as never);
   } catch (e) {
     if ((e as { code?: number }).code === 11000) return { error: "That code already exists." };
     throw e;
@@ -378,7 +381,7 @@ export async function testEmailAction(sub: string): Promise<AdminState> {
 }
 
 // ---------------- notes, content, reviews, import ----------------
-import { savePage, deletePage, setReviewStatus, importProductsCsv } from "@/lib/commerce/extras";
+import { savePage, deletePage, setReviewStatus, importProductsCsv, sendCampaign } from "@/lib/commerce/extras";
 import { orders as ordersRepo } from "@/lib/commerce/orders";
 
 export async function orderNoteAction(sub: string, orderId: string, _p: AdminState, form: FormData): Promise<AdminState> {
@@ -413,7 +416,7 @@ export async function pageAction(sub: string, id: string | null, _p: AdminState,
   const g = await guardSoft(sub, "branding.edit");
   if (!g) return { error: "You do not have permission to edit pages." };
   if (g.store.eff.get("F-078")?.enabled === false) return { error: "Custom pages are turned off." };
-  const r = await savePage(g.store.ctx, { id: id ?? undefined, title: fd(form, "title"), slug: fd(form, "slug"), body: fd(form, "body"), published: form.get("published") === "on", inFooter: form.get("inFooter") === "on" });
+  const r = await savePage(g.store.ctx, { id: id ?? undefined, title: fd(form, "title"), slug: fd(form, "slug"), body: fd(form, "body"), kind: fd(form, "kind") === "post" ? "post" : "page", published: form.get("published") === "on", inFooter: form.get("inFooter") === "on" });
   if (!r.ok) return { error: r.error };
   await record(g.store, g.staff, id ? "page.update" : "page.create", fd(form, "title"));
   revalidatePath(`/s/${sub}`, "layout");
@@ -451,4 +454,186 @@ export async function importProductsAction(sub: string, _p: AdminState, form: Fo
   const detail = r.errors.slice(0, 5).map((e) => `row ${e.row}: ${e.message}`).join("; ");
   if (r.created === 0 && r.errors.length) return { error: `Nothing was imported. ${detail}` };
   return { message: `${r.created} product${r.created === 1 ? "" : "s"} imported (set to published in the file to show them in the store).${r.errors.length ? ` ${r.errors.length} row(s) skipped: ${detail}` : ""}` };
+}
+
+// ---------------- promotions, hours, delivery zones, look and feel ----------------
+import { savePromo, setPromoActive, validateHours, validateZones } from "@/lib/commerce/rules";
+import { DAYS, type Day, type Settings } from "@/lib/commerce/types";
+
+async function saveSetting(g: NonNullable<Awaited<ReturnType<typeof guardSoft>>>, sub: string, set: Record<string, unknown>, what: string) {
+  await (await tenantDb(g.store.ctx)).collection("settings").updateOne({ instanceId: g.store.ctx.instanceId }, { $set: set, $inc: { configVersion: 1 } }, { upsert: true });
+  await bumpInstance(g.store.instance._id);
+  clearResolutionCache();
+  clearToggleCache();
+  await record(g.store, g.staff, `settings.${what}`);
+  revalidatePath(`/s/${sub}`, "layout");
+}
+
+export async function promoAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "promotions.manage");
+  if (!g) return { error: "You do not have permission to manage promotions." };
+  const r = await savePromo(g.store.ctx, { name: fd(form, "name"), kind: fd(form, "kind"), percent: fd(form, "percent"), min: fd(form, "min"), categoryId: fd(form, "categoryId"), startsAt: fd(form, "startsAt"), endsAt: fd(form, "endsAt") }, g.store.settings.currency);
+  if (!r.ok) return { error: r.error };
+  const feature = fd(form, "kind") === "flash" ? "F-056" : "F-054";
+  const f = await setOwnerFeature(g.store.instance, g.staff.actor, feature, true, true);
+  await record(g.store, g.staff, "promo.create", fd(form, "name"));
+  revalidatePath(`/s/${sub}`, "layout");
+  return f.ok ? { message: "Promotion saved. It applies automatically in the cart." } : { message: "Saved, but not active for customers:", error: f.error };
+}
+
+export async function promoOpAction(sub: string, id: string, op: "on" | "off" | "delete"): Promise<AdminState> {
+  const g = await guardSoft(sub, "promotions.manage");
+  if (!g) return { error: "You do not have permission to manage promotions." };
+  await setPromoActive(g.store.ctx, id, op === "delete" ? "delete" : op === "on");
+  await record(g.store, g.staff, `promo.${op}`, id);
+  revalidatePath(`/s/${sub}`, "layout");
+  return { message: "Done." };
+}
+
+export async function hoursAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "branding.edit");
+  if (!g) return { error: "You do not have permission to change opening hours." };
+  if (form.get("clear") === "on") {
+    await saveSetting(g, sub, { hours: {} }, "hours");
+    return { message: "Opening hours removed: the store takes orders at any time." };
+  }
+  const hours: NonNullable<Settings["hours"]> = {};
+  for (const d of DAYS as Day[]) hours[d] = form.get(`closed_${d}`) === "on" || !fd(form, `open_${d}`) ? null : { open: fd(form, `open_${d}`), close: fd(form, `close_${d}`) };
+  const bad = validateHours(hours);
+  if (bad) return { error: bad };
+  await saveSetting(g, sub, { hours }, "hours");
+  await setOwnerFeature(g.store.instance, g.staff.actor, "F-018", true, true).catch(() => undefined);
+  return { message: "Opening hours saved. Outside these hours customers can browse but not order." };
+}
+
+export async function zonesAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "settings.commerce");
+  if (!g) return { error: "Only the store owner can change delivery fees." };
+  const cur = g.store.settings.currency;
+  const zones: { id: string; name: string; cities: string[]; feeMinor: number }[] = [];
+  for (const line of fd(form, "zones").split("\n").map((l) => l.trim()).filter(Boolean)) {
+    const [name = "", fee = "", cities = ""] = line.split("|").map((x) => x.trim());
+    let feeMinor: number;
+    try { feeMinor = parseMajor(fee, cur).minor; } catch { return { error: `Line "${line.slice(0, 40)}": write the fee as a number like 200.` }; }
+    zones.push({ id: randomUUID().slice(0, 8), name, cities: cities.split(",").map((c) => c.trim()).filter(Boolean), feeMinor });
+  }
+  const bad = validateZones(zones);
+  if (bad) return { error: bad };
+  await saveSetting(g, sub, { zones }, "zones");
+  if (zones.length) {
+    const f = await setOwnerFeature(g.store.instance, g.staff.actor, "F-071", true, true);
+    if (!f.ok) return { message: "Saved, but not active:", error: f.error };
+  }
+  return { message: zones.length ? "Delivery zones saved." : "Delivery zones removed: the flat fee applies everywhere." };
+}
+
+export async function lookAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "branding.edit");
+  if (!g) return { error: "You do not have permission to change the look of the store." };
+  const font = fd(form, "font");
+  if (!["system", "serif", "rounded", "mono"].includes(font)) return { error: "Choose one of the listed fonts." };
+  const hero: NonNullable<Settings["hero"]> = [];
+  for (let i = 1; i <= 3; i++) {
+    const title = fd(form, `title${i}`).trim(), text = fd(form, `text${i}`).trim(), imageUrl = fd(form, `image${i}`).trim(), link = fd(form, `link${i}`).trim();
+    if (!title && !text && !imageUrl) continue;
+    if (title.length > 80 || text.length > 200) return { error: `Slide ${i}: title up to 80 and text up to 200 characters.` };
+    if (imageUrl && !/^https:\/\/[^\s"'<>]+$/i.test(imageUrl)) return { error: `Slide ${i}: the image link must start with https://` };
+    if (link && !/^(\/|https:\/\/)[^\s"'<>]*$/i.test(link)) return { error: `Slide ${i}: the button link must start with / or https://` };
+    if (link.startsWith("//")) return { error: `Slide ${i}: the button link is not valid.` };
+    hero.push({ title, text, imageUrl, link });
+  }
+  await saveSetting(g, sub, { font, hero }, "look");
+  return { message: "Saved. Your store has its new look." };
+}
+
+// ---------------- bulk product edits (F-115) ----------------
+export async function bulkProductsAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "catalog.manage");
+  if (!g) return { error: "You do not have permission to change products." };
+  if (g.store.eff.get("F-115")?.enabled !== true) return { error: "Bulk editing is turned off. Turn it on in Features." };
+  const ids = form.getAll("ids").map(String).filter(Boolean).slice(0, 200);
+  if (!ids.length) return { error: "Tick at least one product first." };
+  const op = fd(form, "op");
+  const col = await products.collection(g.store.ctx);
+  const scope = products.scope(g.store.ctx, { _id: { $in: ids } } as never);
+  let n = 0;
+  if (op === "publish" || op === "draft") n = (await col.updateMany(scope, { $set: { status: op === "publish" ? "published" : "draft", updatedAt: new Date() } })).modifiedCount;
+  else if (op === "delete") n = (await col.deleteMany(scope)).deletedCount;
+  else if (op === "price") {
+    const pct = parseFloat(fd(form, "value"));
+    if (!Number.isFinite(pct) || pct < -90 || pct > 500 || pct === 0) return { error: "Enter a percentage between -90 and 500, for example 10 or -15." };
+    n = (await col.updateMany(scope, [{ $set: { priceMinor: { $max: [0, { $round: [{ $multiply: ["$priceMinor", 1 + pct / 100] }, 0] }] }, compareAtMinor: null, updatedAt: new Date() } }])).modifiedCount;
+  } else if (op === "stock") {
+    const v = parseInt(fd(form, "value"), 10);
+    if (!Number.isInteger(v) || v < 0 || v > 1_000_000) return { error: "Enter the new stock as a whole number." };
+    n = (await col.updateMany(scope, { $set: { stock: v, updatedAt: new Date() } })).modifiedCount;
+  } else return { error: "Choose what to do with the selected products." };
+  await record(g.store, g.staff, `products.bulk_${op}`, `${n} products`);
+  revalidatePath(`/s/${sub}`, "layout");
+  return { message: `${n} product${n === 1 ? "" : "s"} updated.` };
+}
+
+export async function campaignAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "promotions.manage");
+  if (!g) return { error: "You do not have permission to send campaigns." };
+  if (g.store.eff.get("F-058")?.enabled !== true) return { error: "Turn on Newsletter signup first." };
+  const f = await setOwnerFeature(g.store.instance, g.staff.actor, "F-059", true, true);
+  if (!f.ok) return { error: f.error };
+  const r = await sendCampaign(g.store.ctx, { subject: fd(form, "subject"), message: fd(form, "message") }, g.store.settings.branding.storeName || g.store.instance.name);
+  if (!r.ok) return { error: r.error };
+  await record(g.store, g.staff, "campaign.sent", `${r.queued} subscribers`);
+  revalidatePath(`${home(sub)}/inbox`);
+  return { message: `Sent to ${r.queued} subscriber${r.queued === 1 ? "" : "s"}. Every email has an unsubscribe link.` };
+}
+
+// ---------------- integrations (webhooks, API keys) ----------------
+import { addEndpoint, setEndpoint, replayDelivery, createApiKey, revokeApiKey, WEBHOOK_EVENTS } from "@/lib/commerce/integrations";
+
+export async function webhookAddAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "settings.commerce");
+  if (!g || g.staff.impersonating) return { error: "Only the store owner can manage integrations." };
+  const r = await addEndpoint(g.store.ctx, fd(form, "url"), WEBHOOK_EVENTS.filter((e) => form.get(`ev_${e}`) === "on"));
+  if (!r.ok) return { error: r.error };
+  const f = await setOwnerFeature(g.store.instance, g.staff.actor, "F-099", true, true);
+  await setOwnerFeature(g.store.instance, g.staff.actor, "F-142", true, true).catch(() => undefined);
+  await record(g.store, g.staff, "webhook.add", fd(form, "url").slice(0, 80));
+  revalidatePath(`${home(sub)}/integrations`);
+  return { message: `Added. Your signing secret is shown only now, copy it: ${r.secret}`, ...(f.ok ? {} : { error: f.error }) };
+}
+
+export async function webhookOpAction(sub: string, id: string, op: "enable" | "disable" | "delete"): Promise<AdminState> {
+  const g = await guardSoft(sub, "settings.commerce");
+  if (!g || g.staff.impersonating) return { error: "Only the store owner can manage integrations." };
+  await setEndpoint(g.store.ctx, id, op);
+  await record(g.store, g.staff, `webhook.${op}`, id);
+  revalidatePath(`${home(sub)}/integrations`);
+  return { message: "Done." };
+}
+
+export async function webhookReplayAction(sub: string, id: string): Promise<AdminState> {
+  const g = await guardSoft(sub, "settings.commerce");
+  if (!g || g.staff.impersonating) return { error: "Only the store owner can manage integrations." };
+  const ok = await replayDelivery(g.store.ctx, id);
+  revalidatePath(`${home(sub)}/integrations`);
+  return ok ? { message: "Sent again. Check the status below." } : { error: "That delivery was not found." };
+}
+
+export async function apiKeyCreateAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "settings.commerce");
+  if (!g || g.staff.impersonating) return { error: "Only the store owner can manage integrations." };
+  const r = await createApiKey(g.store.ctx, fd(form, "name"));
+  if (!r.ok) return { error: r.error };
+  const f = await setOwnerFeature(g.store.instance, g.staff.actor, "F-100", true, true);
+  await record(g.store, g.staff, "apikey.create", fd(form, "name"));
+  revalidatePath(`${home(sub)}/integrations`);
+  return { message: `Key created. Copy it now, it is never shown again: ${r.key}`, ...(f.ok ? {} : { error: f.error }) };
+}
+
+export async function apiKeyRevokeAction(sub: string, id: string): Promise<AdminState> {
+  const g = await guardSoft(sub, "settings.commerce");
+  if (!g || g.staff.impersonating) return { error: "Only the store owner can manage integrations." };
+  await revokeApiKey(g.store.ctx, id);
+  await record(g.store, g.staff, "apikey.revoke", id);
+  revalidatePath(`${home(sub)}/integrations`);
+  return { message: "Key revoked. It stops working immediately." };
 }

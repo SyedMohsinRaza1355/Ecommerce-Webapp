@@ -22,7 +22,7 @@ export default async function EditProduct({ params }: { params: Promise<{ sub: s
         action={saveProductAction.bind(null, sub, id)}
         categories={cats.map((c) => ({ id: c._id, name: c.name }))}
         submit="Save changes"
-        initial={{ name: p.name, description: p.description, price: formatMajor(money(p.priceMinor, cur)), compareAt: p.compareAtMinor ? formatMajor(money(p.compareAtMinor, cur)) : "", categoryId: p.categoryId ?? "", imageUrl: p.imageUrl, stock: p.stock, trackStock: p.trackStock, status: p.status }}
+        initial={{ name: p.name, description: p.description, price: formatMajor(money(p.priceMinor, cur)), compareAt: p.compareAtMinor ? formatMajor(money(p.compareAtMinor, cur)) : "", categoryId: p.categoryId ?? "", imageUrl: p.imageUrl, stock: p.stock, trackStock: p.trackStock, backorder: p.backorder, status: p.status }}
       />
       <div className="card mt-6 max-w-2xl">
         <h2 className="font-bold">Delete product</h2>

@@ -1,7 +1,7 @@
 import { AF } from "./Forms";
 import type { AdminState } from "@/app/s/[sub]/admin/actions";
 
-type P = { name?: string; description?: string; price?: string; compareAt?: string; categoryId?: string; imageUrl?: string; stock?: number; trackStock?: boolean; status?: string };
+type P = { name?: string; description?: string; price?: string; compareAt?: string; categoryId?: string; imageUrl?: string; stock?: number; trackStock?: boolean; backorder?: boolean; status?: string };
 
 export function ProductForm({ action, categories, initial = {}, submit }: { action: (p: AdminState, f: FormData) => Promise<AdminState>; categories: { id: string; name: string }[]; initial?: P; submit: string }) {
   return (
@@ -21,6 +21,7 @@ export function ProductForm({ action, categories, initial = {}, submit }: { acti
         </label>
       </div>
       <label className="mb-4 flex items-center gap-2 text-sm"><input type="checkbox" name="trackStock" defaultChecked={initial.trackStock ?? true} /> Track stock for this product</label>
+      <label className="mb-4 flex items-center gap-2 text-sm"><input type="checkbox" name="backorder" defaultChecked={initial.backorder ?? false} /> Allow orders when out of stock (backorder). Needs &quot;Backorders&quot; turned on in Features.</label>
     </AF>
   );
 }

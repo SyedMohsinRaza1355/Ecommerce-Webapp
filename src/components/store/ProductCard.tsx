@@ -14,9 +14,10 @@ export function ProductImage({ p, className = "" }: { p: Pick<Product, "name" | 
   );
 }
 
-export function ProductCard({ p, base, currency, locale, trackStock, delay = 0, heading = "h3" }: { p: Product; base: string; currency: string; locale: Locale; trackStock: boolean; delay?: number; heading?: "h2" | "h3" }) {
+export function ProductCard({ p, base, currency, locale, trackStock, backorders = false, delay = 0, heading = "h3" }: { p: Product; base: string; currency: string; locale: Locale; trackStock: boolean; backorders?: boolean; delay?: number; heading?: "h2" | "h3" }) {
   const H = heading;
-  const sold = trackStock && p.trackStock && p.stock <= 0;
+  const back = backorders && Boolean(p.backorder);
+  const sold = trackStock && p.trackStock && p.stock <= 0 && !back;
   return (
     <li className="card hover-lift reveal flex flex-col p-3" style={{ animationDelay: `${Math.min(delay, 12) * 40}ms` }}>
       <Link href={`${base}/product/${p.slug}`} className="block">
@@ -28,7 +29,7 @@ export function ProductCard({ p, base, currency, locale, trackStock, delay = 0, 
           <span className="text-lg font-extrabold">{fmtMoney(p.priceMinor, currency, locale)}</span>
           {p.compareAtMinor ? <s className="text-sm text-muted">{fmtMoney(p.compareAtMinor, currency, locale)}</s> : null}
         </p>
-        {sold ? <span className="badge badge-red">{t(locale, "outOfStock")}</span> : trackStock && p.trackStock && p.stock <= 5 ? <span className="badge badge-amber">{t(locale, "onlyLeft", { n: p.stock })}</span> : null}
+        {sold ? <span className="badge badge-red">{t(locale, "outOfStock")}</span> : trackStock && p.trackStock && p.stock <= 5 && !(back && p.stock <= 0) ? <span className="badge badge-amber">{t(locale, "onlyLeft", { n: p.stock })}</span> : null}
       </div>
     </li>
   );

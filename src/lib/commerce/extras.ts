@@ -60,10 +60,10 @@ export async function saveContactMessage(ctx: TenantContext, i: { name: string; 
 }
 
 // ---------------- custom pages (F-078, F-081) ----------------
-export type PageDoc = { _id: string; slug: string; title: string; body: string; published: boolean; inFooter: boolean; updatedAt: Date };
-const RESERVED = new Set(["admin", "account", "cart", "checkout", "products", "product", "order", "pay", "contact", "p"]);
+export type PageDoc = { _id: string; slug: string; title: string; body: string; kind?: "page" | "post"; published: boolean; inFooter: boolean; updatedAt: Date; createdAt?: Date };
+const RESERVED = new Set(["admin", "account", "cart", "checkout", "products", "product", "order", "pay", "contact", "p", "blog"]);
 
-export async function savePage(ctx: TenantContext, i: { id?: string; title: string; slug?: string; body: string; published: boolean; inFooter: boolean }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+export async function savePage(ctx: TenantContext, i: { id?: string; title: string; slug?: string; body: string; kind?: "page" | "post"; published: boolean; inFooter: boolean }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const title = i.title.trim();
   if (title.length < 2 || title.length > 80) return { ok: false, error: "Enter a page title (2 to 80 characters)." };
   if (i.body.length > 20000) return { ok: false, error: "The page text can be at most 20,000 characters." };
@@ -72,7 +72,7 @@ export async function savePage(ctx: TenantContext, i: { id?: string; title: stri
   const c = (await db(ctx)).collection<PageDoc & { instanceId: string }>("pages");
   const id = i.id ?? randomUUID();
   try {
-    await c.updateOne({ _id: id, instanceId: ctx.instanceId }, { $set: { slug, title, body: i.body, published: i.published, inFooter: i.inFooter, updatedAt: new Date() } }, { upsert: true });
+    await c.updateOne({ _id: id, instanceId: ctx.instanceId }, { $set: { slug, title, body: i.body, kind: i.kind === "post" ? "post" : "page", published: i.published, inFooter: i.kind === "post" ? false : i.inFooter, updatedAt: new Date() }, $setOnInsert: { createdAt: new Date() } }, { upsert: true });
   } catch (e) {
     if ((e as { code?: number }).code === 11000) return { ok: false, error: "Another page already uses that address." };
     throw e;
@@ -80,8 +80,9 @@ export async function savePage(ctx: TenantContext, i: { id?: string; title: stri
   return { ok: true, id };
 }
 
-export async function listPages(ctx: TenantContext, publishedOnly = false): Promise<PageDoc[]> {
-  return (await (await db(ctx)).collection<PageDoc>("pages").find({ instanceId: ctx.instanceId, ...(publishedOnly ? { published: true } : {}) } as never).sort({ title: 1 }).limit(100).toArray()) as PageDoc[];
+export async function listPages(ctx: TenantContext, publishedOnly = false, kind?: "page" | "post"): Promise<PageDoc[]> {
+  const kindFilter = kind === "post" ? { kind: "post" } : kind === "page" ? { kind: { $ne: "post" } } : {};
+  return (await (await db(ctx)).collection<PageDoc>("pages").find({ instanceId: ctx.instanceId, ...(publishedOnly ? { published: true } : {}), ...kindFilter } as never).sort(kind === "post" ? { createdAt: -1 } : { title: 1 }).limit(100).toArray()) as PageDoc[];
 }
 
 export async function getPageBySlug(ctx: TenantContext, slug: string): Promise<PageDoc | null> {
@@ -114,7 +115,11 @@ export async function notifyLowStock(ctx: TenantContext, taken: { productId: str
 
 // ---------------- CSV (F-011, F-096) ----------------
 /** Cells starting with = + - @ are prefixed so spreadsheets never run them as formulas (CSV injection). */
+/** A number we formatted ourselves (for example -25.00): written as is, because it is not typed by a user. */
+export const rawNum = (v: number) => ({ rawNum: v.toFixed(2) });
+
 export function csvCell(v: unknown): string {
+  if (v && typeof v === "object" && "rawNum" in v) return String((v as { rawNum: string }).rawNum);
   let s = v instanceof Date ? v.toISOString() : String(v ?? "");
   if (typeof v === "string" && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -139,9 +144,20 @@ export function parseCsv(text: string): string[][] {
   return rows.filter((r) => r.some((c) => c.trim() !== ""));
 }
 
-export async function exportCsv(ctx: TenantContext, kind: "orders" | "products" | "customers" | "newsletter"): Promise<string> {
+export async function exportCsv(ctx: TenantContext, kind: "orders" | "products" | "customers" | "newsletter" | "ledger"): Promise<string> {
   const d = await db(ctx);
   const f = { instanceId: ctx.instanceId };
+  if (kind === "ledger") {
+    // one line per money movement: a sale when payment is taken, a negative line for every refund
+    const rows = await d.collection<Order>("orders").find({ instanceId: ctx.instanceId, "payment.state": { $in: ["captured", "partially_refunded", "refunded"] } } as never).sort({ createdAt: 1 }).limit(5000).toArray();
+    const lines: unknown[][] = [["date", "order", "type", "method", "reference", "amount", "tax_included", "currency"]];
+    for (const o of rows) {
+      const paidAt = [...o.history].reverse().find((h) => h.kind === "payment" && h.to === "captured")?.at ?? o.createdAt;
+      lines.push([paidAt, o.orderNo, "sale", o.payment.method, o.payment.manual?.reference ?? o.payment.stripe?.paymentIntent ?? "", rawNum(o.totalMinor / 100), rawNum(o.taxMinor / 100), o.currency]);
+      for (const r of o.payment.refunds) lines.push([r.at, o.orderNo, "refund", o.payment.method, r.id, rawNum(-r.amountMinor / 100), "", o.currency]);
+    }
+    return toCsv(lines);
+  }
   if (kind === "products") {
     const rows = await products.find(ctx, {}, 5000);
     const cats = new Map((await categories.find(ctx, {}, 500)).map((c) => [c._id, c.name]));
@@ -238,4 +254,41 @@ export async function buildBackup(ctx: TenantContext) {
     out[name] = rows.map((r) => { const { passwordHash: _p, totp: _t, ...rest } = r as Record<string, unknown>; void _p; void _t; return rest; });
   }
   return { format: "storeforge-backup-v1", createdAt: new Date().toISOString(), counts: Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v.length])), data: out };
+}
+
+// ---------------- email campaigns (F-059) ----------------
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { env } from "@/lib/env";
+import { storeUrlFor } from "./orders";
+
+export const unsubscribeToken = (instanceId: string, email: string) => createHmac("sha256", env().sessionSecret || "dev").update(`unsub:${instanceId}:${email.toLowerCase()}`).digest("base64url");
+
+export function verifyUnsubscribe(instanceId: string, email: string, token: string): boolean {
+  const want = Buffer.from(unsubscribeToken(instanceId, email)), got = Buffer.from(token);
+  return want.length === got.length && timingSafeEqual(want, got);
+}
+
+export const CAMPAIGN_MAX_RECIPIENTS = 200;
+
+/** Queues one email per subscriber (up to the cap) and starts sending; the daily job finishes any that are left. */
+export async function sendCampaign(ctx: TenantContext, i: { subject: string; message: string }, storeName: string): Promise<{ ok: true; queued: number } | { ok: false; error: string }> {
+  const subject = i.subject.trim(), message = i.message.trim();
+  if (subject.length < 3 || subject.length > 120) return { ok: false, error: "Write a subject of 3 to 120 characters." };
+  if (message.length < 10 || message.length > 5000) return { ok: false, error: "Write a message of 10 to 5000 characters." };
+  const subs = await (await db(ctx)).collection("newsletter").find({ instanceId: ctx.instanceId }).limit(CAMPAIGN_MAX_RECIPIENTS).toArray();
+  if (!subs.length) return { ok: false, error: "Nobody has subscribed yet." };
+  if (!(await rateLimit(`campaign:${ctx.instanceId}`, 2, 60 * 60_000)).ok) return { ok: false, error: "You can send two campaigns per hour. Please wait a little." };
+  const base = await storeUrlFor(ctx);
+  for (const s of subs) {
+    const email = String(s.email);
+    await enqueueEmail(ctx, "campaign", email, { storeName, subject, message, unsubscribeUrl: `${base}/unsubscribe?e=${encodeURIComponent(email)}&t=${unsubscribeToken(ctx.instanceId, email)}` });
+  }
+  for (let n = 0; n < 4; n++) { const r = await processOutbox(ctx, { limit: 50 }); if (r.sent + r.failed + r.dead === 0) break; }
+  return { ok: true, queued: subs.length };
+}
+
+export async function unsubscribe(ctx: TenantContext, email: string, token: string): Promise<boolean> {
+  if (!verifyUnsubscribe(ctx.instanceId, email, token)) return false;
+  await (await db(ctx)).collection("newsletter").deleteOne({ instanceId: ctx.instanceId, email: email.toLowerCase() });
+  return true;
 }

@@ -23,6 +23,7 @@ export default async function DiscountsPage({ params }: { params: Promise<{ sub:
           <label className="field"><span>Code</span><input className="input" name="code" placeholder="WEEKDAY10" maxLength={30} dir="ltr" required /></label>
           <label className="field"><span>Percent off</span><input className="input" name="percent" inputMode="decimal" placeholder="10" dir="ltr" required /></label>
           <label className="field"><span>Maximum uses (optional)</span><input className="input" name="maxUses" inputMode="numeric" placeholder="100" dir="ltr" /></label>
+          {store.eff.get("F-057")?.enabled && <label className="field"><span>Uses per customer (optional)</span><input className="input" name="perCustomer" inputMode="numeric" placeholder="1" dir="ltr" /><p className="hint">Customers must sign in to use a limited code.</p></label>}
           <label className="field"><span>Expires on (optional)</span><input className="input" name="expires" type="date" /></label>
         </div>
       </AF>
