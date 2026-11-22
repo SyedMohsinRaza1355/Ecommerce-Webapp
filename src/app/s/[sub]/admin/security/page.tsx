@@ -1,4 +1,5 @@
 import Link from "next/link";
+import QRCode from "qrcode";
 import { requireStaff } from "@/lib/commerce/load";
 import { otpauthUrl } from "@/lib/auth/totp";
 import { AF } from "@/components/admin/Forms";
@@ -14,6 +15,8 @@ export default async function SecurityPage({ params }: { params: Promise<{ sub: 
   const u = staff.user;
   const pending = u?.totp && !u.totp.enabled ? u.totp.secret : null;
   const required = store.eff.get("F-109")?.enabled;
+  const link = pending && u ? otpauthUrl(pending, u.email, store.settings.branding.storeName || store.instance.name) : "";
+  const qr = link ? await QRCode.toDataURL(link, { margin: 2, width: 220, errorCorrectionLevel: "M" }) : "";
   return (
     <main className="mx-auto max-w-xl p-4 sm:p-8">
       <Link href={`/s/${sub}/admin`} className="text-sm underline">Back to admin</Link>
@@ -29,9 +32,12 @@ export default async function SecurityPage({ params }: { params: Promise<{ sub: 
                 <SetupTotp sub={sub} />
                 {pending && (
                   <div className="pop-in mt-4">
-                    <p className="text-sm">Add this key in your app (choose &ldquo;enter a setup key&rdquo;), then type the 6-digit code it shows.</p>
+                    <p className="text-sm">Open your authenticator app, choose &ldquo;scan a QR code&rdquo; and scan this picture, then type the 6-digit code it shows.</p>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={qr} alt="QR code to add this account to your authenticator app" width={220} height={220} className="mx-auto mt-3 rounded-xl ring-1 ring-line" />
+                    <p className="mt-3 text-sm">Cannot scan? Choose &ldquo;enter a setup key&rdquo; in your app and type this key instead:</p>
                     <p className="mt-2 break-all rounded-xl bg-slate-50 p-3 font-mono text-sm tracking-wider" dir="ltr">{pending}</p>
-                    <p className="hint break-all" dir="ltr">{otpauthUrl(pending, u.email, store.settings.branding.storeName || store.instance.name)}</p>
+                    <p className="hint break-all" dir="ltr">{link}</p>
                     <AF action={confirmTotpAction.bind(null, sub)} submit="Turn on two-step sign in" className="mt-3">
                       <label className="field"><span>6-digit code</span><input className="input" name="code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" dir="ltr" required /></label>
                     </AF>
