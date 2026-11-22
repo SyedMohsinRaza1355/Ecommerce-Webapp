@@ -7,7 +7,7 @@ import { htmlEmail, sendMail } from "@/lib/email/send";
 // sends with bounded exponential backoff and a dead-letter state. The "provider" is a
 // simulated mailer that records messages so they can be inspected in the admin.
 export type EmailType = "order.placed" | "order.paid" | "order.status" | "order.cancelled" | "order.refunded" | "support.signin"
-  | "staff.invite" | "staff.reset" | "campaign" | "customer.welcome" | "customer.signin_link" | "customer.reset" | "contact.message" | "stock.low" | "newsletter.welcome" | "test.email" | "stock.back" | "return.update" | "cart.reminder";
+  | "staff.invite" | "staff.reset" | "campaign" | "customer.welcome" | "customer.signin_link" | "customer.reset" | "contact.message" | "stock.low" | "newsletter.welcome" | "test.email" | "stock.back" | "return.update" | "cart.reminder" | "booking.confirmed" | "booking.cancelled";
 
 type OutboxDoc = {
   _id: string;
@@ -60,6 +60,8 @@ export function renderEmail(type: EmailType, data: Record<string, unknown>): Ren
     case "stock.back": return mk(`${store}: ${data.product} is back in stock`, "Back in stock", [`Good news: ${data.product} is available again. It may sell out quickly.`], { label: "View product", url: String(data.url) });
     case "return.update": return mk(`${store}: update on your request for order ${no}`, `Your request for order ${no}`, [`Status: ${data.status}.`, ...(data.note ? [String(data.note)] : [])]);
     case "cart.reminder": return mk(`${store}: you left something in your cart`, "Your cart is waiting", ["You left items in your cart. They are saved for you."], { label: "Back to my cart", url: String(data.url) });
+    case "booking.confirmed": return mk(`${store}: your table is booked`, "Your table is booked", [`${data.name}, we have a table for ${data.party} on ${data.date} at ${data.time}.`, "Please arrive on time; we hold tables for 15 minutes. To change or cancel, reply to this email or call us."]);
+    case "booking.cancelled": return mk(`${store}: your booking was cancelled`, "Booking cancelled", [`Your booking on ${data.date} at ${data.time} was cancelled. We are sorry for the trouble. You are welcome to book another time.`]);
     case "test.email": return mk(`${store}: test email`, "Email is working", ["This is a test message. If you can read it, customers will receive your order emails."]);
   }
 }

@@ -10,6 +10,8 @@ import { signBody, verifySignature, type GatewayEvent } from "./gateway";
 import { enqueueEmail, processOutbox } from "./outbox";
 import { formatMajor, money } from "@/lib/money/money";
 import { notifyLowStock } from "./extras";
+import { weightSurcharge } from "./weight";
+import { groupDiscountMinor, applyBalances, restoreBalances, restoreOrderRewards, awardOnCompletion, type Rewards } from "./rewards";
 import { prepareLines, reserveLines, releaseLines, releaseOrderItems } from "./lines";
 import { emitWebhook } from "./integrations";
 import { bestPromo, hasHours, isOpenNow, describeHours, listPromos, zoneFor } from "./rules";
@@ -41,7 +43,7 @@ export async function trackUrlFor(ctx: TenantContext, token: string): Promise<st
   return `${await storeUrlFor(ctx)}/order/${token}`;
 }
 
-export type Features = { shipping: boolean; freeShipping: boolean; tax: boolean; discounts: boolean; cod: boolean; card: boolean; emails: boolean; stockTracking: boolean; manualBank?: boolean; wallet?: boolean; orderTypes?: boolean; pickup?: boolean; tableQr?: boolean; scheduled?: boolean; throttle?: boolean; lowStock?: boolean; maintenance?: boolean; autoPromos?: boolean; flashSales?: boolean; bxgy?: boolean; chat?: boolean; couponLimits?: boolean; backorders?: boolean; hours?: boolean; zones?: boolean };
+export type Features = { shipping: boolean; freeShipping: boolean; tax: boolean; discounts: boolean; cod: boolean; card: boolean; emails: boolean; stockTracking: boolean; manualBank?: boolean; wallet?: boolean; orderTypes?: boolean; pickup?: boolean; tableQr?: boolean; scheduled?: boolean; throttle?: boolean; lowStock?: boolean; maintenance?: boolean; autoPromos?: boolean; flashSales?: boolean; bxgy?: boolean; weight?: boolean; chat?: boolean; giftCards?: boolean; credit?: boolean; loyalty?: boolean; groups?: boolean; referral?: boolean; couponLimits?: boolean; backorders?: boolean; hours?: boolean; zones?: boolean };
 
 export type PlaceInput = {
   items: { productId: string; qty: number; sel?: string[] }[];
@@ -51,6 +53,10 @@ export type PlaceInput = {
   idempotencyKey: string;
   discountCode?: string;
   customerId?: string;
+  /** gift card code, and whether to use the signed-in customer's store credit or points (F-044, F-131, F-050) */
+  giftCode?: string;
+  useCredit?: boolean;
+  usePoints?: boolean;
   fulfilment?: { type: "delivery" | "pickup" | "dine_in"; locationId?: string; table?: string; scheduledFor?: string };
   /** lets tests pretend it is another time of day */
   now?: Date;
@@ -168,11 +174,19 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
     : null;
   let fixedDiscount = 0;
   if (promo && promo.discountMinor > Math.round((subtotalNow * discountBps) / 10000)) { fixedDiscount = promo.discountMinor; discountBps = 0; code = undefined; }
+  const grp = feat.groups ? await groupDiscountMinor(ctx, settings, input.customerId, subtotalNow - fixedDiscount - Math.round((subtotalNow * discountBps) / 10000)) : null;
+  if (grp) fixedDiscount += grp.minor;
   const zone = feat.zones && ft === "delivery" ? zoneFor(settings.zones, input.customer.city) : null;
+  let weightFee = 0;
+  if (feat.weight && feat.shipping && ft === "delivery" && settings.weightTiers?.length) {
+    const ws = await (await tenantDb(ctx)).collection<{ _id: string; weightGrams?: number }>("products").find({ instanceId: ctx.instanceId, _id: { $in: lines.map((l) => l.productId) } } as never).project({ weightGrams: 1 }).toArray();
+    const by = new Map(ws.map((w) => [String(w._id), w.weightGrams ?? 0]));
+    weightFee = weightSurcharge(settings.weightTiers, lines.reduce((n, l) => n + (by.get(l.productId) ?? 0) * l.qty, 0));
+  }
 
   const totals = computeTotals(lines, {
     currency: settings.currency, taxBps: settings.taxBps, taxEnabled: feat.tax,
-    shippingFlatMinor: feat.shipping && ft === "delivery" ? (zone ? zone.feeMinor : settings.shippingFlatMinor) : 0,
+    shippingFlatMinor: feat.shipping && ft === "delivery" ? (zone ? zone.feeMinor : settings.shippingFlatMinor) + weightFee : 0,
     freeShippingOverMinor: feat.freeShipping ? settings.freeShippingOverMinor : null, discountBps, fixedDiscountMinor: fixedDiscount,
   });
 
@@ -182,6 +196,18 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
 
   if (feat.lowStock && feat.emails) await notifyLowStock(ctx, reserve.filter((r) => r.mode === "product"), settings.contactEmail || null, storeName).catch(() => undefined);
 
+  // gift card, store credit and points: taken off the total; the rest is paid the usual way (F-044, F-131, F-050, F-132)
+  let finalTotal = totals.totalMinor;
+  let rewards: Rewards | undefined;
+  if (input.giftCode?.trim() || input.useCredit || input.usePoints) {
+    const ap = await applyBalances(ctx, settings, { giftCards: feat.giftCards, credit: feat.credit, loyalty: feat.loyalty }, { giftCode: input.giftCode, useCredit: input.useCredit, usePoints: input.usePoints, customerId: input.customerId }, totals.totalMinor, input.now ?? new Date());
+    if (!ap.ok) { await releaseLines(ctx, reserve); return { ok: false, error: ap.error, code: "discount" }; }
+    rewards = ap.rewards;
+    finalTotal = totals.totalMinor - ap.usedMinor;
+  }
+  if (grp) rewards = { ...(rewards ?? {}), groupName: grp.name, groupMinor: grp.minor };
+  const covered = finalTotal === 0 && totals.totalMinor > 0;
+
   // consume the discount atomically (usage limit is race-safe)
   if (code) {
     const r = await (await tenantDb(ctx)).collection("discounts").updateOne(
@@ -190,6 +216,7 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
     );
     if (r.matchedCount !== 1) {
       await releaseLines(ctx, reserve);
+      if (rewards) await restoreBalances(ctx, rewards, input.customerId);
       return { ok: false, error: "That discount code has just been used up.", code: "discount" };
     }
   }
@@ -202,14 +229,15 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
     _id: id, orderNo, idempotencyKey: input.idempotencyKey, trackingHash: sha(trackingTokenFor(ctx.instanceId, id)),
     items: prep.lines.map((l) => ({ productId: l.productId, name: l.name, unitMinor: l.unitMinor, qty: l.qty, lineMinor: l.unitMinor * l.qty, ...(l.sel.length ? { sel: l.sel } : {}), ...(l.parts ? { parts: l.parts } : {}) })),
     currency: settings.currency, subtotalMinor: totals.subtotalMinor, discountMinor: totals.discountMinor, ...(code ? { discountCode: code } : {}), ...(fixedDiscount && promo ? { promo: { id: promo.promo._id, name: promo.promo.name } } : {}),
-    shippingMinor: totals.shippingMinor, taxMinor: totals.taxMinor, totalMinor: totals.totalMinor,
+    shippingMinor: totals.shippingMinor, taxMinor: totals.taxMinor, totalMinor: finalTotal,
+    ...(rewards ? { rewards } : {}),
     customer: { ...input.customer, name: input.customer.name.trim(), email: input.customer.email.trim().toLowerCase(), ...(ft !== "delivery" ? { address: input.customer.address || (fulfilment?.type === "dine_in" ? `Table ${fulfilment.table}` : "Pickup"), city: input.customer.city || "-" } : {}) },
-    state: cod ? "confirmed" : "pending",
+    state: cod || covered ? "confirmed" : "pending",
     ...(input.customerId ? { customerId: input.customerId } : {}),
     ...(fulfilment ? { fulfilment } : {}),
-    payment: { method: manual ? "manual" : cod ? "cod" : "card", state: cod ? "cod_due" : "requires_payment", ...(provider ? { provider } : {}), ...(manual ? { manual } : {}), refundedMinor: 0, refunds: [] },
+    payment: { method: manual ? "manual" : cod ? "cod" : "card", state: covered ? "captured" : cod ? "cod_due" : "requires_payment", ...(provider && !covered ? { provider } : {}), ...(manual ? { manual } : {}), refundedMinor: 0, refunds: [] },
     stockReserved: reserve.length > 0,
-    history: [{ at: now, kind: "order", to: cod ? "confirmed" : "pending", by: "customer" }],
+    history: [{ at: now, kind: "order", to: cod || covered ? "confirmed" : "pending", by: "customer" }, ...(covered ? [{ at: now, kind: "payment" as const, to: "captured", by: "system", note: "paid with gift card, credit or points" }] : [])],
     createdAt: now, updatedAt: now,
   };
 
@@ -217,6 +245,7 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
     await orders.insert(ctx, order as never);
   } catch (e) {
     await releaseLines(ctx, reserve);
+    if (rewards) await restoreBalances(ctx, rewards, input.customerId);
     if ((e as { code?: number }).code === 11000) {
       const again = (await orders.find(ctx, { idempotencyKey: input.idempotencyKey } as never, 1))[0];
       if (again) return { ok: true, orderId: again._id, orderNo: again.orderNo, trackingToken: trackingTokenFor(ctx.instanceId, again._id), needsPayment: again.payment.state === "requires_payment", duplicate: true };
@@ -225,21 +254,21 @@ export async function placeOrder(ctx: TenantContext, settings: Settings, feat: F
   }
 
   const trackingToken = trackingTokenFor(ctx.instanceId, id);
-  if (provider === "test") {
+  if (provider === "test" && !covered) {
     const intentRef = `pi_${randomUUID().replace(/-/g, "")}`;
-    await (await platformDb()).collection("payment_intents").insertOne({ _id: intentRef as never, instanceId: ctx.instanceId, orderId: id, amountMinor: totals.totalMinor, currency: settings.currency, createdAt: now });
+    await (await platformDb()).collection("payment_intents").insertOne({ _id: intentRef as never, instanceId: ctx.instanceId, orderId: id, amountMinor: finalTotal, currency: settings.currency, createdAt: now });
     await orders.updateById(ctx, id, { "payment.intentRef": intentRef } as never);
   }
-  if ((cod || manual) && feat.emails) {
+  if ((cod || manual || covered) && feat.emails) {
     await enqueueEmail(ctx, "order.placed", order.customer.email, {
-      orderNo, storeName, total: `${settings.currency} ${formatMajor(money(totals.totalMinor, settings.currency))}`, trackUrl: await trackUrlFor(ctx, trackingToken),
-      ...(manual ? { payTo: `${manual.label}: ${manual.accountTitle}, ${manual.accountNumber}. ${manual.instructions}`.trim() } : {}),
+      orderNo, storeName, total: `${settings.currency} ${formatMajor(money(finalTotal, settings.currency))}`, trackUrl: await trackUrlFor(ctx, trackingToken),
+      ...(manual && !covered ? { payTo: `${manual.label}: ${manual.accountTitle}, ${manual.accountNumber}. ${manual.instructions}`.trim() } : {}),
     });
     await processOutbox(ctx).catch(() => undefined);
   }
   await emitWebhook(ctx, "order.created", order);
   if (feat.chat) await import("./growth").then((m) => m.notifyOrderChat(ctx, order, storeName)).catch(() => undefined);
-  return { ok: true, orderId: id, orderNo, trackingToken, needsPayment: input.method !== "cod" };
+  return { ok: true, orderId: id, orderNo, trackingToken, needsPayment: input.method !== "cod" && !covered };
 }
 
 // ---------------- in-store sale (cashier till) ----------------
@@ -414,7 +443,7 @@ export async function retryPayment(ctx: TenantContext, orderId: string): Promise
 // ---------------- staff operations ----------------
 export type Actor = { userId: string; role: string };
 
-export async function transitionOrder(ctx: TenantContext, orderId: string, to: OrderState, actor: Actor, notify: { emails: boolean; storeName: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function transitionOrder(ctx: TenantContext, orderId: string, to: OrderState, actor: Actor, notify: { emails: boolean; storeName: string; rewards?: { settings: Settings; on: import("./rewards").RewardFeatures & { referral?: boolean } } }): Promise<{ ok: true } | { ok: false; error: string }> {
   const order = await orders.findById(ctx, orderId);
   if (!order) return { ok: false, error: "Order not found." };
   if (!roleMayMoveOrder(actor.role, to)) return { ok: false, error: "Your role cannot make this change." };
@@ -436,7 +465,12 @@ export async function transitionOrder(ctx: TenantContext, orderId: string, to: O
     // release stock exactly once, even if two staff cancel at the same time
     const flipped = await col.findOneAndUpdate({ _id: orderId, instanceId: ctx.instanceId, stockReserved: true } as never, { $set: { stockReserved: false } } as never);
     if (flipped) await releaseOrderItems(ctx, order.items);
+    await restoreOrderRewards(ctx, order).catch(() => undefined);
     if (notify.emails) await enqueueEmail(ctx, "order.cancelled", order.customer.email, { orderNo: order.orderNo, storeName: notify.storeName });
+  } else if (to === "completed" && notify.rewards) {
+    const done = await orders.findById(ctx, orderId);
+    if (done) await awardOnCompletion(ctx, notify.rewards.settings, notify.rewards.on, done).catch(() => undefined);
+    if (notify.emails) await enqueueEmail(ctx, "order.status", order.customer.email, { orderNo: order.orderNo, storeName: notify.storeName, status: to, trackUrl: await trackUrlFor(ctx, trackingTokenFor(ctx.instanceId, orderId)) });
   } else if (notify.emails && to !== "confirmed") {
     await enqueueEmail(ctx, "order.status", order.customer.email, { orderNo: order.orderNo, storeName: notify.storeName, status: to, trackUrl: await trackUrlFor(ctx, trackingTokenFor(ctx.instanceId, orderId)) });
   }
@@ -508,6 +542,7 @@ export async function expireUnpaidOrders(ctx: TenantContext, olderThanMs = 30 * 
     if (r.matchedCount !== 1) continue;
     const flipped = await col.findOneAndUpdate({ _id: o._id, instanceId: ctx.instanceId, stockReserved: true } as never, { $set: { stockReserved: false } } as never);
     if (flipped) await releaseOrderItems(ctx, o.items);
+    await restoreOrderRewards(ctx, o).catch(() => undefined);
     n++;
   }
   return n;

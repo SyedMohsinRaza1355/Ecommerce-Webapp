@@ -59,7 +59,7 @@ export async function logoutAction(sub: string) {
 function productFields(form: FormData) {
   return ProductInput.safeParse({
     name: fd(form, "name"), description: fd(form, "description"), price: fd(form, "price"), compareAt: fd(form, "compareAt"),
-    categoryId: fd(form, "categoryId"), imageUrl: fd(form, "imageUrl"), stock: fd(form, "stock") || "0", trackStock: form.get("trackStock") === "on", backorder: form.get("backorder") === "on", sku: fd(form, "sku"), seoTitle: fd(form, "seoTitle"), seoDescription: fd(form, "seoDescription"), optionsText: fd(form, "optionsText"), galleryText: fd(form, "galleryText"), attributesText: fd(form, "attributesText"), bundleText: fd(form, "bundleText"), availDays: fd(form, "availDays"), availFrom: fd(form, "availFrom"), availTo: fd(form, "availTo"), status: fd(form, "status") || "draft",
+    categoryId: fd(form, "categoryId"), imageUrl: fd(form, "imageUrl"), stock: fd(form, "stock") || "0", trackStock: form.get("trackStock") === "on", backorder: form.get("backorder") === "on", sku: fd(form, "sku"), weight: fd(form, "weight"), seoTitle: fd(form, "seoTitle"), seoDescription: fd(form, "seoDescription"), optionsText: fd(form, "optionsText"), galleryText: fd(form, "galleryText"), attributesText: fd(form, "attributesText"), bundleText: fd(form, "bundleText"), availDays: fd(form, "availDays"), availFrom: fd(form, "availFrom"), availTo: fd(form, "availTo"), status: fd(form, "status") || "draft",
   });
 }
 
@@ -112,7 +112,7 @@ export async function categoryAction(sub: string, _p: AdminState, form: FormData
 }
 
 // ---------------- orders ----------------
-const notifyOf = (store: { feat: Features; settings: { branding: { storeName: string } }; instance: { name: string } }) => ({ emails: store.feat.emails, storeName: store.settings.branding.storeName || store.instance.name });
+const notifyOf = (store: { feat: Features; settings: Settings; instance: { name: string } }) => ({ emails: store.feat.emails, storeName: store.settings.branding.storeName || store.instance.name, rewards: { settings: store.settings, on: { giftCards: store.feat.giftCards, credit: store.feat.credit, loyalty: store.feat.loyalty, groups: store.feat.groups, referral: store.feat.referral } } });
 
 export async function orderStatusAction(sub: string, orderId: string, to: string): Promise<AdminState> {
   const g = await guardSoft(sub, "orders.updateStatus");
@@ -830,3 +830,180 @@ export async function domainCheckAction(sub: string): Promise<AdminState> {
   const detail = `${h.status ?? "no answer"}${h.ms !== null ? `, ${h.ms} ms` : ""}`;
   return h.ok ? { message: `${h.note} (${detail})` } : { error: `${h.note} (${detail})` };
 }
+
+// ---------------- rewards: loyalty, groups, referral, gift cards, store credit ----------------
+import { issueGiftCard, setGiftCardActive, grantCredit, setCustomerGroup } from "@/lib/commerce/rewards";
+
+export async function rewardsSettingsAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "promotions.manage");
+  if (!g) return { error: "You do not have permission to change rewards." };
+  const cur = g.store.settings.currency;
+  const set: Record<string, unknown> = {};
+  const features: string[] = [];
+  const earn = fd(form, "earnPer100").trim(), worth = fd(form, "pointValue").trim();
+  if (form.get("loyaltyOn") === "on") {
+    const e = Number(earn || "5");
+    if (!Number.isFinite(e) || e <= 0 || e > 100) return { error: "Points per 100 spent must be between 0.1 and 100." };
+    let pointMinor = 20;
+    try { pointMinor = worth ? parseMajor(worth, cur).minor : 20; } catch { return { error: "Enter what one point is worth, like 0.20." }; }
+    if (pointMinor < 1 || pointMinor > 100000) return { error: "One point must be worth at least 0.01 and not too much." };
+    set.loyalty = { earnPer100: e, pointMinor };
+    features.push("F-050");
+  }
+  const ref = fd(form, "referral").trim();
+  if (ref) {
+    let rewardMinor = 0;
+    try { rewardMinor = parseMajor(ref, cur).minor; } catch { return { error: "Enter the referral reward like 200." }; }
+    if (rewardMinor < 100 || rewardMinor > 10_000_000) return { error: "The referral reward must be a sensible amount." };
+    set.referral = { rewardMinor };
+    features.push("F-062", "F-131");
+  } else set.referral = { rewardMinor: 0 };
+  const groups: { id: string; name: string; percentBps: number }[] = [];
+  for (const line of fd(form, "groups").split("\n").map((l) => l.trim()).filter(Boolean)) {
+    const [name = "", pct = ""] = line.split("|").map((x) => x.trim());
+    const p = Number(pct.replace("%", ""));
+    if (!name || name.length > 30 || !Number.isFinite(p) || p <= 0 || p > 90) return { error: `Line "${line.slice(0, 40)}": write it as  Name | percent off  (1 to 90).` };
+    groups.push({ id: slugify(name) || "group", name, percentBps: Math.round(p * 100) });
+  }
+  if (groups.length > 10 || new Set(groups.map((x) => x.id)).size !== groups.length) return { error: "Up to 10 groups with different names." };
+  set.groups = groups;
+  if (groups.length) features.push("F-049");
+  await saveSetting(g, sub, set, "rewards");
+  const problems: string[] = [];
+  for (const id of features) { const r = await setOwnerFeature(g.store.instance, g.staff.actor, id, true, true); if (!r.ok) problems.push(r.error); }
+  return problems.length ? { message: "Saved, but some parts could not be switched on:", error: problems[0] } : { message: "Saved." };
+}
+
+export async function giftCardAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "promotions.manage");
+  if (!g) return { error: "You do not have permission to issue gift cards." };
+  let amountMinor = 0;
+  try { amountMinor = parseMajor(fd(form, "amount").trim(), g.store.settings.currency).minor; } catch { return { error: "Enter the amount like 1000." }; }
+  const r = await issueGiftCard(g.store.ctx, { amountMinor, note: fd(form, "note"), expiresAt: fd(form, "expiresAt") });
+  if (!r.ok) return { error: r.error };
+  const f = await setOwnerFeature(g.store.instance, g.staff.actor, "F-044", true, true);
+  await record(g.store, g.staff, "giftcard.issue", r.code);
+  revalidatePath(`/s/${sub}/admin/rewards`);
+  return { message: `Gift card ready: ${r.code}. Give this code to the customer.${f.ok ? "" : " (Switch on card payments so shoppers can use it.)"}` };
+}
+
+export async function giftCardOpAction(sub: string, id: string, active: boolean): Promise<AdminState> {
+  const g = await guardSoft(sub, "promotions.manage");
+  if (!g) return { error: "You do not have permission." };
+  await setGiftCardActive(g.store.ctx, id, active);
+  await record(g.store, g.staff, active ? "giftcard.on" : "giftcard.off", id);
+  revalidatePath(`/s/${sub}/admin/rewards`);
+  return { message: "Done." };
+}
+
+export async function creditAction(sub: string, customerId: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "promotions.manage");
+  if (!g) return { error: "You do not have permission." };
+  const raw = fd(form, "amount").trim();
+  const neg = raw.startsWith("-");
+  let minor = 0;
+  try { minor = parseMajor(neg ? raw.slice(1) : raw, g.store.settings.currency).minor; } catch { return { error: "Enter an amount like 200, or -200 to take some away." }; }
+  const r = await grantCredit(g.store.ctx, customerId, neg ? -minor : minor, fd(form, "reason"));
+  if (!r.ok) return { error: r.error };
+  await setOwnerFeature(g.store.instance, g.staff.actor, "F-131", true, true);
+  await record(g.store, g.staff, "credit.adjust", customerId);
+  revalidatePath(`/s/${sub}/admin/rewards`);
+  return { message: "Credit updated." };
+}
+
+export async function customerGroupAction(sub: string, customerId: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "promotions.manage");
+  if (!g) return { error: "You do not have permission." };
+  const gid = fd(form, "group");
+  if (gid && !(g.store.settings.groups ?? []).some((x) => x.id === gid)) return { error: "Unknown group." };
+  await setCustomerGroup(g.store.ctx, customerId, gid);
+  await record(g.store, g.staff, "customer.group", customerId);
+  revalidatePath(`/s/${sub}/admin/rewards`);
+  return { message: "Saved." };
+}
+
+import { parseTiers } from "@/lib/commerce/weight";
+
+export async function weightAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "settings.commerce");
+  if (!g) return { error: "Only the store owner can change delivery fees." };
+  const cur = g.store.settings.currency;
+  const r = parseTiers(fd(form, "tiers"), (x) => parseMajor(x, cur).minor);
+  if (!r.ok) return { error: r.error };
+  await saveSetting(g, sub, { weightTiers: r.tiers }, "weight");
+  const f = r.tiers.length ? await setOwnerFeature(g.store.instance, g.staff.actor, "F-064", true, true) : await setOwnerFeature(g.store.instance, g.staff.actor, "F-064", false, true);
+  return f.ok ? { message: r.tiers.length ? "Saved. The extra fee is added to delivery orders by weight." : "Weight fees are off." } : { message: "Saved, but not active:", error: f.error };
+}
+
+// ---------------- suppliers, purchase orders, table booking ----------------
+import { saveSupplier, deleteSupplier, createPurchaseOrder, setPurchaseOrderStatus, receivePurchaseOrder, setBookingStatus, validateBookingConfig, DEFAULT_BOOKING, type Booking } from "@/lib/commerce/operations";
+
+export async function supplierAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "catalog.manage");
+  if (!g) return { error: "You do not have permission to manage suppliers." };
+  const r = await saveSupplier(g.store.ctx, { name: fd(form, "name"), phone: fd(form, "phone"), email: fd(form, "email"), note: fd(form, "note") });
+  if (!r.ok) return { error: r.error };
+  await setOwnerFeature(g.store.instance, g.staff.actor, "F-025", true, true);
+  await record(g.store, g.staff, "supplier.add", fd(form, "name"));
+  revalidatePath(`/s/${sub}/admin/suppliers`);
+  return { message: "Supplier saved." };
+}
+
+export async function supplierDeleteAction(sub: string, id: string): Promise<AdminState> {
+  const g = await guardSoft(sub, "catalog.manage");
+  if (!g) return { error: "You do not have permission." };
+  const r = await deleteSupplier(g.store.ctx, id);
+  if (!r.ok) return { error: r.error };
+  revalidatePath(`/s/${sub}/admin/suppliers`);
+  return { message: "Deleted." };
+}
+
+export async function purchaseOrderAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "catalog.manage");
+  if (!g) return { error: "You do not have permission to make purchase orders." };
+  const cur = g.store.settings.currency;
+  const r = await createPurchaseOrder(g.store.ctx, { supplierId: fd(form, "supplierId"), text: fd(form, "lines"), note: fd(form, "note") }, (x) => parseMajor(x, cur).minor);
+  if (!r.ok) return { error: r.error };
+  await record(g.store, g.staff, "po.create", String(r.no));
+  revalidatePath(`/s/${sub}/admin/suppliers`);
+  return { message: `Purchase order #${r.no} created as a draft.` };
+}
+
+export async function purchaseOrderOpAction(sub: string, id: string, op: "ordered" | "cancelled" | "received"): Promise<AdminState> {
+  const g = await guardSoft(sub, "catalog.manage");
+  if (!g) return { error: "You do not have permission." };
+  if (op === "received") {
+    const r = await receivePurchaseOrder(g.store.ctx, id);
+    if (!r.ok) return { error: r.error };
+    await record(g.store, g.staff, "po.receive", id);
+    revalidatePath(`/s/${sub}`, "layout");
+    return { message: `Received. ${r.units} units were added to stock.` };
+  }
+  const r = await setPurchaseOrderStatus(g.store.ctx, id, op);
+  if (!r.ok) return { error: r.error };
+  await record(g.store, g.staff, `po.${op}`, id);
+  revalidatePath(`/s/${sub}/admin/suppliers`);
+  return { message: "Done." };
+}
+
+export async function bookingSettingsAction(sub: string, _p: AdminState, form: FormData): Promise<AdminState> {
+  const g = await guardSoft(sub, "settings.commerce");
+  if (!g) return { error: "Only the store owner can change this." };
+  const cfg = { capacity: Number(fd(form, "capacity")), maxParty: Number(fd(form, "maxParty")), from: fd(form, "from"), to: fd(form, "to"), slotMinutes: Number(fd(form, "slotMinutes")), daysAhead: Number(fd(form, "daysAhead")) };
+  const bad = validateBookingConfig(cfg);
+  if (bad) return { error: bad };
+  await saveSetting(g, sub, { booking: cfg }, "booking");
+  const f = await setOwnerFeature(g.store.instance, g.staff.actor, "F-118", form.get("on") === "on", true);
+  return f.ok ? { message: form.get("on") === "on" ? "Saved. Customers can now book a table." : "Saved. Booking is switched off." } : { message: "Saved, but not active:", error: f.error };
+}
+
+export async function bookingOpAction(sub: string, id: string, to: Booking["status"]): Promise<AdminState> {
+  const g = await guardSoft(sub, "orders.updateStatus");
+  if (!g) return { error: "You do not have permission." };
+  const r = await setBookingStatus(g.store.ctx, id, to, g.store.settings.branding.storeName || g.store.instance.name);
+  if (!r.ok) return { error: r.error };
+  await record(g.store, g.staff, `booking.${to}`, id);
+  revalidatePath(`/s/${sub}/admin/bookings`);
+  return { message: "Done." };
+}
+void DEFAULT_BOOKING;

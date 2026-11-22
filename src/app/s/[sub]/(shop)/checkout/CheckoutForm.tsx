@@ -21,13 +21,15 @@ function fieldOf(error: string | undefined): string | null {
 }
 
 export default function CheckoutForm({
-  action, idem, labels, methods, discounts, prefill, total, fulfil,
+  action, idem, labels, methods, discounts, rewards, prefill, total, fulfil,
 }: {
   action: (p: CheckoutState, f: FormData) => Promise<CheckoutState>;
   idem: string;
   labels: Labels;
   methods: CheckoutMethod[];
   discounts: boolean;
+  /** what the shopper can pay with besides the chosen method (F-044, F-131, F-050) */
+  rewards?: { gift: boolean; credit?: string; points?: { count: number; value: string } };
   prefill?: Record<string, string>;
   total: string;
   fulfil?: { types: ("delivery" | "pickup" | "dine_in")[]; locations: { id: string; name: string; address: string }[]; scheduling: boolean; defaultType: "delivery" | "pickup" | "dine_in"; table?: string };
@@ -108,6 +110,15 @@ export default function CheckoutForm({
           ))}
         </div>
         {discounts && <div className="mt-4">{field("discountCode", labels.discountCode, { autoComplete: "off", maxLength: 30, dir: "ltr" })}</div>}
+        {rewards && (rewards.gift || rewards.credit || rewards.points) && (
+          <fieldset className="mt-4 rounded-xl p-3 ring-1 ring-line">
+            <legend className="px-1 text-sm font-bold">Pay with your balance</legend>
+            {rewards.gift && <div>{field("giftCode", "Gift card code", { autoComplete: "off", maxLength: 20, dir: "ltr" })}</div>}
+            {rewards.credit && <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" name="useCredit" defaultChecked /> Use my store credit ({rewards.credit})</label>}
+            {rewards.points && <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" name="usePoints" /> Use my {rewards.points.count} points (worth {rewards.points.value})</label>}
+            <p className="hint mt-2">Whatever your balance does not cover is paid with the method you choose below.</p>
+          </fieldset>
+        )}
       </fieldset>
 
       <div aria-live="assertive">{state?.error && !bad && <p role="alert" className="err pop-in text-base">{state.error}</p>}</div>

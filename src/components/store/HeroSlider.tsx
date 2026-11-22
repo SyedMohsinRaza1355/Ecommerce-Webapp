@@ -23,8 +23,9 @@ export default function HeroSlider({ slides, cta }: { slides: Slide[]; cta: stri
     >
       {s.imageUrl && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={s.imageUrl} alt="" className="absolute inset-0 h-full w-full object-cover opacity-40" />
+        <img src={s.imageUrl} alt="" className="absolute inset-0 h-full w-full object-cover opacity-80" />
       )}
+      {s.imageUrl && <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/45 to-black/60" aria-hidden="true" />}
       <div className="relative px-6 py-14 text-center sm:py-20" aria-live={paused ? "polite" : "off"}>
         <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl">{s.title}</h1>
         {s.text && <p className="mx-auto mt-3 max-w-xl text-lg text-slate-100 urdu-line">{s.text}</p>}

@@ -68,7 +68,7 @@ export async function placeOrderAction(sub: string, _prev: CheckoutState, form: 
   const s = await okStore(sub);
   const ip = ((await headers()).get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
   const values: Record<string, string> = {};
-  for (const k of ["name", "email", "phone", "address", "city", "notes", "method", "discountCode"]) values[k] = String(form.get(k) ?? "");
+  for (const k of ["name", "email", "phone", "address", "city", "notes", "method", "discountCode", "giftCode"]) values[k] = String(form.get(k) ?? "");
   if (!(await rateLimit(`checkout:${s.instance._id}:${ip}`, 10, 60_000)).ok) return { error: "Too many attempts. Please wait a minute and try again.", values };
 
   const jar = await cookies();
@@ -76,7 +76,7 @@ export async function placeOrderAction(sub: string, _prev: CheckoutState, form: 
   const items = await getCartItems(s.ctx, cartId);
   const me = s.eff.get("F-045")?.enabled ? await currentCustomer(s) : null;
   const r = await placeOrder(s.ctx, s.settings, s.feat, s.settings.branding.storeName || s.instance.name, {
-    items, method: values.method, customerId: me?._id, fulfilment: { type: (["pickup", "dine_in"].includes(String(form.get("ftype"))) ? String(form.get("ftype")) : "delivery") as "delivery", locationId: String(form.get("locationId") ?? "") || undefined, table: String(form.get("table") ?? "") || undefined, scheduledFor: String(form.get("scheduledFor") ?? "") || undefined }, idempotencyKey: String(form.get("idem") ?? ""), discountCode: values.discountCode || undefined,
+    items, method: values.method, customerId: me?._id, giftCode: values.giftCode, useCredit: form.get("useCredit") === "on", usePoints: form.get("usePoints") === "on", fulfilment: { type: (["pickup", "dine_in"].includes(String(form.get("ftype"))) ? String(form.get("ftype")) : "delivery") as "delivery", locationId: String(form.get("locationId") ?? "") || undefined, table: String(form.get("table") ?? "") || undefined, scheduledFor: String(form.get("scheduledFor") ?? "") || undefined }, idempotencyKey: String(form.get("idem") ?? ""), discountCode: values.discountCode || undefined,
     customer: { name: values.name, email: values.email, phone: values.phone, address: values.address, city: values.city, notes: values.notes },
   });
   if (!r.ok) return { error: r.error, values, field: r.code };
@@ -229,4 +229,14 @@ export async function returnAction(sub: string, token: string, _p: AcctState, fo
   const r = await requestReturn(s.ctx, o, String(form.get("kind") ?? ""), String(form.get("reason") ?? ""), await ipNow(), s.settings.contactEmail || null, s.settings.branding.storeName || s.instance.name);
   if (r.ok) revalidatePath(`/s/${sub}/order/${token}`);
   return r.ok ? { message: "Request sent. We will email you with the decision." } : { error: r.error, values: { reason: String(form.get("reason") ?? "") } };
+}
+
+import { bookTable, DEFAULT_BOOKING } from "@/lib/commerce/operations";
+
+export async function bookTableAction(sub: string, _p: AcctState, form: FormData): Promise<AcctState> {
+  const s = await okStore(sub);
+  if (s.eff.get("F-118")?.enabled !== true) return { error: "Booking is not available." };
+  const v = { date: String(form.get("date") ?? ""), time: String(form.get("time") ?? ""), party: String(form.get("party") ?? ""), name: String(form.get("name") ?? ""), email: String(form.get("email") ?? ""), phone: String(form.get("phone") ?? ""), note: String(form.get("note") ?? "") };
+  const r = await bookTable(s.ctx, { ...DEFAULT_BOOKING, ...(s.settings.booking ?? {}) }, v, await ipNow(), { email: s.settings.contactEmail || null, storeName: s.settings.branding.storeName || s.instance.name });
+  return r.ok ? { message: "Your table is booked. We sent a confirmation to your email." } : { error: r.error, values: v };
 }

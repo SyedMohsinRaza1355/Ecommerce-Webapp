@@ -92,6 +92,7 @@ export const ProductInput = z.object({
   trackStock: z.boolean().default(true),
   backorder: z.boolean().default(false),
   sku: z.string().trim().max(40).default(""),
+  weight: z.string().trim().max(8).default(""),
   seoTitle: z.string().trim().max(70).default(""),
   seoDescription: z.string().trim().max(160).default(""),
   optionsText: z.string().max(4000).default(""),
@@ -118,11 +119,13 @@ export function extrasFrom(input: ProductForm, currency: string): { ok: true; se
   const gallery = input.galleryText.split("\n").map((l) => l.trim()).filter(Boolean);
   if (gallery.length > 8) return { ok: false, error: "At most 8 extra pictures." };
   for (const g of gallery) if (!/^https:\/\/[^\s"'<>]+$/i.test(g) && !IMAGE_PATH_RE.test(g)) return { ok: false, error: "Extra pictures must be https links or uploaded pictures, one per line." };
+  const weightGrams = input.weight === "" ? 0 : Number(input.weight);
+  if (!Number.isInteger(weightGrams) || weightGrams < 0 || weightGrams > 1_000_000) return { ok: false, error: "Weight is a whole number of grams." };
   const days = input.availDays.split(",").map((d) => d.trim().toLowerCase()).filter(Boolean) as Day[];
   const availability = { ...(days.length ? { days } : {}), ...(input.availFrom ? { from: input.availFrom } : {}), ...(input.availTo ? { to: input.availTo } : {}) };
   const bad = validateAvailability(availability);
   if (bad) return { ok: false, error: bad };
-  return { ok: true, set: { sku: input.sku, seoTitle: input.seoTitle, seoDescription: input.seoDescription, options: opts.groups, gallery, attributes: attrs.attrs, bundle: bundle.parts, availability: hasWindow(availability) ? availability : null } };
+  return { ok: true, set: { sku: input.sku, weightGrams, seoTitle: input.seoTitle, seoDescription: input.seoDescription, options: opts.groups, gallery, attributes: attrs.attrs, bundle: bundle.parts, availability: hasWindow(availability) ? availability : null } };
 }
 
 async function uniqueSlug(ctx: TenantContext, base: string, exceptId?: string): Promise<string> {

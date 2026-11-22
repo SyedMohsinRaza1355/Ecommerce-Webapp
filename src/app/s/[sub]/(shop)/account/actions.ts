@@ -12,6 +12,7 @@ import { enqueueEmail, processOutbox } from "@/lib/commerce/outbox";
 import { storeUrlFor } from "@/lib/commerce/orders";
 import { tenantDb } from "@/lib/tenant/schema";
 import { rateLimit } from "@/lib/auth/ratelimit";
+import { applyReferral } from "@/lib/commerce/rewards";
 import { randomUUID } from "node:crypto";
 
 export type AcctState = undefined | { error?: string; message?: string; values?: Record<string, string> };
@@ -34,6 +35,7 @@ export async function registerAction(sub: string, _p: AcctState, form: FormData)
   if (fd(form, "password") !== fd(form, "confirm")) return { error: "The two passwords do not match.", values };
   const r = await registerCustomer(s.ctx, { ...values, password: fd(form, "password") }, await ipOf());
   if (!r.ok) return { error: r.error, values };
+  if (s.feat.referral && fd(form, "ref").trim()) await applyReferral(s.ctx, s.settings, r.customer._id, fd(form, "ref")).catch(() => undefined);
   await setCustomerCookie(s.ctx, r.customer._id);
   if (s.feat.emails) {
     await enqueueEmail(s.ctx, "customer.welcome", r.customer.email, { storeName: storeName(s), name: r.customer.name, url: `${await storeUrlFor(s.ctx)}/account` });

@@ -53,6 +53,7 @@ export default async function ShopLayout({ children, params }: { children: React
           <SearchBox action={`${base}/products`} suggestUrl={`${base}/suggest`} label={t(L, "search")} placeholder={t(L, "searchPlaceholder")} button={<>{Icon.search}<span className="max-sm:sr-only">{t(L, "search")}</span></>} />
           <nav className="ms-auto flex items-center gap-2" aria-label="Main">
             <Link href={`${base}/products`} className="btn btn-secondary hidden sm:inline-flex">{t(L, "shop")}</Link>
+            {store.eff.get("F-118")?.enabled === true && <Link href={`${base}/book`} className="btn btn-secondary hidden md:inline-flex">Book a table</Link>}
             {store.eff.get("F-077")?.enabled === true && <ThemeToggle />}
             {bilingual && (
               <form action={setLocaleAction.bind(null, sub)}>

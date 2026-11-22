@@ -183,4 +183,23 @@ describe.skipIf(!ENABLED)("standards: PCI scope, PWA, privacy rights, performanc
       expect(r.ms).toBeLessThan(1000);
     });
   });
+  describe("growth, rewards and back-office screens", () => {
+    const ADMIN = ["quotes", "returns", "receive", "funnel", "links", "setup", "start", "promotions", "rewards", "suppliers", "bookings", "qr", "products"];
+    it.each(ADMIN)("/admin/%s renders for the owner and is closed to strangers", async (page) => {
+      expect((await call(`/s/${SUB}/admin/${page}`, { cookie: ownerCookie })).status).toBe(200);
+      expect([302, 303, 307]).toContain((await call(`/s/${SUB}/admin/${page}`)).status);
+    });
+    it("keeps optional public features closed until the owner switches them on", async () => {
+      expect((await call(`/s/${SUB}/feed.xml`)).status).toBe(404);
+      expect((await call(`/s/${SUB}/book`)).status).toBe(404);
+      expect((await call(`/s/${SUB}/compare`)).status).toBe(404);
+    });
+    it("keeps secret links secret", async () => {
+      expect((await call(`/s/${SUB}/live/not-the-secret/orders`)).status).toBe(404);
+      expect((await call(`/s/${SUB}/product/zinger-burger?preview=forged`)).status).toBe(200); // published: normal page, preview ignored
+      expect((await call(`/s/${SUB}/cart/restore/short`)).status).toBe(307);
+      expect((await call(`/s/${SUB}/suggest?q=zing`)).status).toBe(200);
+      expect((await call(`/s/${SUB}/t/5`)).status).toBe(307);
+    });
+  });
 });

@@ -21,7 +21,7 @@ export default async function CartPage({ params }: { params: Promise<{ sub: stri
   const L = s.locale;
   const base = `/s/${sub}`;
   const cartId = (await cookies()).get(`cart_${s.instance._id}`)?.value;
-  const v = await cartView(s.ctx, cartId, pricingConfig(s.settings, s.feat), s.feat.stockTracking, { autoPromos: s.feat.autoPromos, flashSales: s.feat.flashSales, bxgy: s.feat.bxgy, backorders: s.feat.backorders });
+  const v = await cartView(s.ctx, cartId, pricingConfig(s.settings, s.feat), s.feat.stockTracking, { autoPromos: s.feat.autoPromos, flashSales: s.feat.flashSales, bxgy: s.feat.bxgy, weightTiers: s.feat.weight ? s.settings.weightTiers : undefined, backorders: s.feat.backorders });
   const money = (n: number) => fmtMoney(n, s.settings.currency, L);
 
   if (v.lines.length === 0) {

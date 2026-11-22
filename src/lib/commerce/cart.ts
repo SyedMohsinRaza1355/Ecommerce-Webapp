@@ -6,6 +6,7 @@ import { computeTotals, type PricingConfig, type Totals } from "./pricing";
 import { bestPromo, listPromos, type PromoResult } from "./rules";
 import { availableNow, describeAvailability, hasVariantStock, resolveSelection, variantLimit } from "./options";
 import { lineKey } from "./lines";
+import { weightSurcharge } from "./weight";
 
 type CartItem = { productId: string; qty: number; sel?: string[] };
 type CartDoc = { _id: string; instanceId: string; items: CartItem[]; updatedAt: Date };
@@ -78,7 +79,7 @@ export async function clearCart(ctx: TenantContext, cartId: string | undefined) 
 export type CartLine = { key: string; product: Product; qty: number; sel: string[]; label: string; unitMinor: number; lineMinor: number; problem?: string };
 
 /** Joins live product data; unpublished, unavailable or sold-out items are flagged, prices always come from the database. */
-export async function cartView(ctx: TenantContext, cartId: string | undefined, cfg: PricingConfig, trackStock: boolean, opts: { autoPromos?: boolean; flashSales?: boolean; bxgy?: boolean; backorders?: boolean; now?: Date } = {}) {
+export async function cartView(ctx: TenantContext, cartId: string | undefined, cfg: PricingConfig, trackStock: boolean, opts: { weightTiers?: { upToGrams: number; feeMinor: number }[]; autoPromos?: boolean; flashSales?: boolean; bxgy?: boolean; backorders?: boolean; now?: Date } = {}) {
   const items = await getCartItems(ctx, cartId);
   const db = await tenantDb(ctx);
   const ids = [...new Set(items.map((i) => i.productId))];
@@ -103,6 +104,7 @@ export async function cartView(ctx: TenantContext, cartId: string | undefined, c
   const promo: PromoResult = opts.autoPromos || opts.flashSales || opts.bxgy
     ? bestPromo(await listPromos(ctx), good.map((l) => ({ productId: l.product._id, categoryId: l.product.categoryId ?? null, lineMinor: l.lineMinor, qty: l.qty, unitMinor: l.unitMinor })), opts.now ?? new Date(), { auto: !!opts.autoPromos, flash: !!opts.flashSales, bxgy: !!opts.bxgy })
     : null;
-  const totals: Totals = computeTotals(good.map((l) => ({ productId: l.product._id, name: l.product.name, unitMinor: l.unitMinor, qty: l.qty })), { ...cfg, fixedDiscountMinor: promo?.discountMinor ?? 0 });
+  const weightFee = opts.weightTiers?.length && cfg.shippingFlatMinor > 0 ? weightSurcharge(opts.weightTiers, good.reduce((n, l) => n + (l.product.weightGrams ?? 0) * l.qty, 0)) : 0;
+  const totals: Totals = computeTotals(good.map((l) => ({ productId: l.product._id, name: l.product.name, unitMinor: l.unitMinor, qty: l.qty })), { ...cfg, shippingFlatMinor: cfg.shippingFlatMinor + weightFee, fixedDiscountMinor: promo?.discountMinor ?? 0 });
   return { lines, totals, promo, count: lines.reduce((n, l) => n + l.qty, 0), hasProblems: lines.some((l) => l.problem) };
 }

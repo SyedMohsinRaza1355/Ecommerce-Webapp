@@ -1,4 +1,5 @@
 import { recordFunnel, saveCartSnapshot } from "@/lib/commerce/growth";
+import { balancesOf, loyaltyOf } from "@/lib/commerce/rewards";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
@@ -21,13 +22,18 @@ export default async function CheckoutPage({ params }: { params: Promise<{ sub: 
   const L = s.locale;
   const base = `/s/${sub}`;
   const cartId = (await cookies()).get(`cart_${s.instance._id}`)?.value;
-  const v = await cartView(s.ctx, cartId, pricingConfig(s.settings, s.feat), s.feat.stockTracking, { autoPromos: s.feat.autoPromos, flashSales: s.feat.flashSales, bxgy: s.feat.bxgy, backorders: s.feat.backorders });
+  const v = await cartView(s.ctx, cartId, pricingConfig(s.settings, s.feat), s.feat.stockTracking, { autoPromos: s.feat.autoPromos, flashSales: s.feat.flashSales, bxgy: s.feat.bxgy, weightTiers: s.feat.weight ? s.settings.weightTiers : undefined, backorders: s.feat.backorders });
   if (v.lines.length === 0 || v.hasProblems) redirect(`${base}/cart`);
   const money = (n: number) => fmtMoney(n, s.settings.currency, L);
   const methods = checkoutMethods(await getPaymentConfig(s.ctx), s.feat, { card: t(L, "payCard"), cod: t(L, "payCod") });
   const canPay = methods.length > 0;
   const me = s.eff.get("F-045")?.enabled ? await currentCustomer(s) : null;
   const defAddr = me?.addresses?.[0];
+  const bal = me && (s.feat.credit || s.feat.loyalty) ? await balancesOf(s.ctx, me._id) : null;
+  const pm = loyaltyOf(s.settings).pointMinor;
+  const rewardsUi = s.feat.giftCards || (bal && (bal.creditMinor > 0 || bal.points > 0))
+    ? { gift: Boolean(s.feat.giftCards), ...(bal && s.feat.credit && bal.creditMinor > 0 ? { credit: money(bal.creditMinor) } : {}), ...(bal && s.feat.loyalty && bal.points > 0 ? { points: { count: bal.points, value: money(bal.points * pm) } } : {}) }
+    : undefined;
   if (s.eff.get("F-141")?.enabled === true) await recordFunnel(s.ctx, "checkout");
   if (me && cartId && s.eff.get("F-060")?.enabled === true) await saveCartSnapshot(s.ctx, me.email, cartId);
   const table = (await cookies()).get(`tbl_${s.instance._id}`)?.value;
@@ -49,6 +55,7 @@ export default async function CheckoutPage({ params }: { params: Promise<{ sub: 
             methods={methods}
             prefill={me ? { name: me.name, email: me.email, phone: me.phone ?? defAddr?.phone ?? "", address: defAddr?.address ?? "", city: defAddr?.city ?? "" } : undefined}
             discounts={s.feat.discounts}
+            rewards={rewardsUi}
             total={money(v.totals.totalMinor)}
             fulfil={types.length > 1 || s.feat.scheduled ? { types: types.length ? types : ["delivery"], locations: s.settings.locations ?? [], scheduling: Boolean(s.feat.scheduled), defaultType: table && types.includes("dine_in") ? "dine_in" : types[0] ?? "delivery", table } : undefined}
             labels={{ contact: t(L, "contact"), fullName: t(L, "fullName"), email: t(L, "email"), phone: t(L, "phone"), address: t(L, "address"), city: t(L, "city"), notes: t(L, "notes"), payment: t(L, "payment"), discountCode: t(L, "discountCode"), placeOrder: t(L, "placeOrder") }}

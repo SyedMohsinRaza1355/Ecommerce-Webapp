@@ -15,7 +15,7 @@ import type { Features } from "./orders";
 
 export function featuresFrom(eff: ReadonlyMap<string, Effective>): Features {
   const on = (id: string) => eff.get(id)?.enabled ?? false;
-  return { shipping: on("F-063"), freeShipping: on("F-065"), tax: on("F-042"), discounts: on("F-053"), cod: on("F-038"), card: on("F-037"), emails: on("F-030"), stockTracking: on("F-019"), manualBank: on("F-039"), wallet: on("F-040"), lowStock: on("F-020"), maintenance: on("F-110"), autoPromos: on("F-054"), flashSales: on("F-056"), bxgy: on("F-055"), chat: on("F-103"), couponLimits: on("F-057"), backorders: on("F-022"), hours: on("F-018"), zones: on("F-071"), orderTypes: on("F-017"), pickup: on("F-034"), tableQr: on("F-016"), scheduled: on("F-035"), throttle: on("F-125") };
+  return { shipping: on("F-063"), freeShipping: on("F-065"), tax: on("F-042"), discounts: on("F-053"), cod: on("F-038"), card: on("F-037"), emails: on("F-030"), stockTracking: on("F-019"), manualBank: on("F-039"), wallet: on("F-040"), lowStock: on("F-020"), maintenance: on("F-110"), autoPromos: on("F-054"), flashSales: on("F-056"), bxgy: on("F-055"), weight: on("F-064"), giftCards: on("F-044"), credit: on("F-131"), loyalty: on("F-050"), groups: on("F-049"), referral: on("F-062"), chat: on("F-103"), couponLimits: on("F-057"), backorders: on("F-022"), hours: on("F-018"), zones: on("F-071"), orderTypes: on("F-017"), pickup: on("F-034"), tableQr: on("F-016"), scheduled: on("F-035"), throttle: on("F-125") };
 }
 
 export type ChangeResult = { ok: true; changed: string[] } | { ok: false; error: string };

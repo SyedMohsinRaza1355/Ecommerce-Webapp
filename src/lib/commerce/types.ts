@@ -12,6 +12,16 @@ export type Settings = {
   freeShippingOverMinor: number | null;
   contactEmail: string;
   announcement?: string;
+  /** table booking (F-118) */
+  booking?: { capacity: number; maxParty: number; from: string; to: string; slotMinutes: number; daysAhead: number };
+  /** extra delivery fee by order weight (F-064) */
+  weightTiers?: { upToGrams: number; feeMinor: number }[];
+  /** loyalty points (F-050): points earned per 100 spent, and what one point is worth in minor units */
+  loyalty?: { earnPer100: number; pointMinor: number };
+  /** customer groups with a standing discount (F-049) */
+  groups?: { id: string; name: string; percentBps: number }[];
+  /** referral programme (F-062): credit for the new customer and for the friend who invited them */
+  referral?: { rewardMinor: number };
   /** shop WhatsApp number, digits (F-135) */
   whatsapp?: string;
   /** order of the home page blocks (F-083) */
@@ -69,6 +79,8 @@ export type Product = {
   /** can be ordered even when stock is 0 (F-022) */
   backorder?: boolean;
   sku?: string;
+  /** grams, used for weight-based delivery fees (F-064) */
+  weightGrams?: number;
   seoTitle?: string;
   seoDescription?: string;
   /** size/colour variants with their own stock, and add-on groups (F-002, F-003, F-014, F-021) */
@@ -128,6 +140,9 @@ export type Order = {
     refunds: { id: string; amountMinor: number; at: Date }[];
   };
   stockReserved: boolean;
+  /** gift card, store credit and points used on this order (split payment) */
+  rewards?: import("./rewards").Rewards;
+  rewardsAwarded?: boolean;
   flags?: { refundRequired?: boolean };
   history: { at: Date; kind: "order" | "payment" | "note"; from?: string; to?: string; by: string; note?: string }[];
   createdAt: Date;

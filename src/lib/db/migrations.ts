@@ -63,6 +63,19 @@ export const _TENANT_V4: Migration = {
 };
 TENANT_MIGRATIONS.push(_TENANT_V4);
 
+export const _TENANT_V5: Migration = {
+  version: 5,
+  name: "gift cards, rewards, funnel counts",
+  async up(db) {
+    await db.collection("gift_cards").createIndex({ instanceId: 1, code: 1 }, { unique: true });
+    await db.collection("reward_ledger").createIndex({ instanceId: 1, customerId: 1, at: -1 });
+    await db.collection("funnel").createIndex({ instanceId: 1, day: 1, kind: 1 });
+    await db.collection("stock_alerts").createIndex({ instanceId: 1, notified: 1 });
+    await db.collection("customers").createIndex({ instanceId: 1, referralCode: 1 }, { sparse: true });
+  },
+};
+TENANT_MIGRATIONS.push(_TENANT_V5);
+
 export const PLATFORM_MIGRATIONS: Migration[] = [
   {
     version: 1,

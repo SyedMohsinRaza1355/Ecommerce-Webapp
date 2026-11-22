@@ -3,7 +3,7 @@ import { authorize } from "@/lib/auth/rbac";
 import { AF } from "@/components/admin/Forms";
 import { DAYS } from "@/lib/commerce/types";
 import { formatMajor, money } from "@/lib/money/money";
-import { hoursAction, zonesAction, lookAction, fulfilmentAction, homeAction } from "@/app/s/[sub]/admin/actions";
+import { hoursAction, zonesAction, lookAction, fulfilmentAction, homeAction, weightAction } from "@/app/s/[sub]/admin/actions";
 
 export const metadata = { title: "Store setup" };
 
@@ -55,6 +55,16 @@ export default async function SetupPage({ params }: { params: Promise<{ sub: str
             </AF>
           </>
         ) : <p className="mt-2 text-sm text-muted">Only the store owner can change delivery fees.</p>}
+      </section>
+
+      <section className="card" aria-labelledby="wt">
+        <h2 id="wt" className="text-lg font-extrabold">Delivery fee by weight</h2>
+        <p className="text-sm text-muted">Give products a weight (in the product&apos;s More section), then add steps here. An order up to that many grams adds the extra fee to the delivery charge. Example: 5000 | 150 means orders up to 5 kg add {formatMajor(money(15000, s.currency))} {s.currency}.</p>
+        {owner ? (
+          <AF action={weightAction.bind(null, sub)} submit="Save weight fees" className="mt-3">
+            <label className="field"><span>One step per line: up to grams | extra fee</span><textarea className="input min-h-20" name="tiers" dir="ltr" placeholder={"1000 | 0\n5000 | 150\n20000 | 600"} defaultValue={(s.weightTiers ?? []).map((t) => `${t.upToGrams} | ${formatMajor(money(t.feeMinor, s.currency))}`).join(String.fromCharCode(10))} /></label>
+          </AF>
+        ) : <p className="mt-2 text-sm text-muted">Only the store owner can change this.</p>}
       </section>
 
       <section className="card" aria-labelledby="hs">

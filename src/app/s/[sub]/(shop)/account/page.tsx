@@ -6,6 +6,8 @@ import { trackingTokenFor } from "@/lib/commerce/orders";
 import { fmtDate, fmtMoney } from "@/lib/i18n";
 import AcctForm from "@/components/store/AcctForm";
 import { reorderAction } from "../actions";
+import { balancesOf, ensureReferralCode, ledgerOf, loyaltyOf } from "@/lib/commerce/rewards";
+
 import { addAddressAction, deleteAccountAction, logoutAction, profileAction, removeAddressAction, verifyEmailAction } from "./actions";
 
 export const metadata = { title: "My account", robots: { index: false } };
@@ -23,6 +25,12 @@ export default async function Account({ params, searchParams }: { params: Promis
   const addrOn = s.eff.get("F-046")?.enabled !== false;
   const wishOn = s.eff.get("F-048")?.enabled === true;
   const privacyOn = s.eff.get("F-051")?.enabled !== false;
+  const walletOn = s.feat.credit || s.feat.loyalty || s.feat.referral;
+  const bal = walletOn ? await balancesOf(s.ctx, c._id) : null;
+  const ledger = walletOn ? await ledgerOf(s.ctx, c._id, 8) : [];
+  const refCode = s.feat.referral && s.settings.referral?.rewardMinor ? await ensureReferralCode(s.ctx, c._id) : "";
+  const L2 = loyaltyOf(s.settings);
+  const money = (n: number) => fmtMoney(n, s.settings.currency, L);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -36,6 +44,22 @@ export default async function Account({ params, searchParams }: { params: Promis
           <form action={logoutAction.bind(null, sub)}><button className="btn btn-secondary">Sign out</button></form>
         </div>
       </div>
+
+      {walletOn && bal && (
+        <section className="card" aria-labelledby="wallet">
+          <h2 id="wallet" className="text-xl font-extrabold">My rewards</h2>
+          <dl className="mt-3 grid gap-3 sm:grid-cols-3">
+            {s.feat.credit && <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-line"><dt className="text-sm text-muted">Store credit</dt><dd className="text-2xl font-extrabold">{money(bal.creditMinor)}</dd></div>}
+            {s.feat.loyalty && <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-line"><dt className="text-sm text-muted">Points</dt><dd className="text-2xl font-extrabold">{bal.points}</dd><dd className="text-xs text-muted">Worth {money(bal.points * L2.pointMinor)}. You earn {L2.earnPer100} points for every {money(10000)} you spend.</dd></div>}
+            {refCode && <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-line"><dt className="text-sm text-muted">Invite a friend</dt><dd className="font-mono text-lg font-bold" dir="ltr">{refCode}</dd><dd className="text-xs text-muted">You both get {money(s.settings.referral!.rewardMinor)} credit when they join and order.</dd></div>}
+          </dl>
+          {ledger.length > 0 && (
+            <ul className="mt-4 space-y-1 text-sm">
+              {ledger.map((e, i) => <li key={i} className="flex justify-between gap-3"><span>{e.reason} <span className="text-xs text-muted">{fmtDate(e.at, L)}</span></span><span className={e.delta >= 0 ? "text-emerald-700" : "text-red-700"}>{e.delta >= 0 ? "+" : ""}{e.kind === "credit" ? money(e.delta) : `${e.delta} points`}</span></li>)}
+            </ul>
+          )}
+        </section>
+      )}
 
       {!c.emailVerified && (
         <div role="status" className="card border-amber-300 bg-amber-50">
